@@ -1,0 +1,28 @@
+# @package _global_
+# Hydra entry for main_test.py single-checkpoint evaluation.
+
+defaults:
+  - _self_
+  - /env: env
+  - /env/robot: single_integrator
+
+method: diffcvarbfqp  # vanilla_ppo | diffcvarbfqp
+actor_model: ""
+
+device: auto         # auto | cpu | cuda
+seed: 0
+
+test_ep: 100
+episode_seeds: ""
+episode_seed_start: 100
+
+render: false
+save_gifs: true
+max_gifs: null
+
+config_json: ""
+use_current_config: false
+
+hydra:
+  job:
+    chdir: false

@@ -1,0 +1,30 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m py_compile main_opt.py main.py main_vec.py)",
+      "Bash(python main_vec.py --help)",
+      "Bash(python main_opt.py --help)",
+      "Bash(python -m py_compile rl/hyperparams.py)",
+      "Bash(python -c \"from rl.hyperparams import build_base_hyperparameters, build_sac_hyperparameters, build_ppo_hyperparameters, build_policy_kwargs, filter_policy_kwargs, load_warm_start_sac, load_warm_start_ppo, resolve_episode_seed_args, VALID_ALGOS; print\\('ok'\\)\")",
+      "Bash(python -m py_compile main.py main_vec.py rl/hyperparams.py)",
+      "Bash(python main.py --help)",
+      "Bash(python main.py trainer=ppo --help)",
+      "Bash(python main_vec.py trainer=sac --help)",
+      "Bash(python -m py_compile main.py main_vec.py main_opt.py rl/hyperparams.py)",
+      "Bash(python -c \"from rl.hyperparams import VALID_ALGOS, build_base_hyperparameters, build_sac_hyperparameters, build_ppo_hyperparameters, build_policy_kwargs, filter_policy_kwargs, load_warm_start_sac, load_warm_start_ppo; print\\('imports ok'\\)\")",
+      "Bash(python -c \"from controller.robot_controller_factory import build_robot_controller\")",
+      "Bash(python -c \"from controller.robot_controller_factory import build_robot_controller; print\\('factory import ok'\\)\")",
+      "Bash(python -m py_compile main_opt.py)",
+      "Bash(python -m py_compile main.py main_vec.py)",
+      "Bash(grep -l \"class.*FCNet\\\\|class.*Network\\\\|def __init__\" /Users/lawliet/Documents/CODE/rcbf_dynamic/RL_Adaptive_CVaRBF/rl/*.py)",
+      "Bash(python -m py_compile rl/network.py rl/network_qpth_v1.py rl/network_qpth_cvar_v2.py controller/cbf_qp.py controller/cvarbf_qp.py controller/traj_prediction_batch.py)",
+      "Bash(python -m py_compile rl/barrier_net.py rl/cvar_barrier_net.py crowd_nav/rl_policy_factory.py)",
+      "Bash(ls main*.py config/*.yaml)",
+      "Bash(python -m py_compile train.py)",
+      "Bash(python -m py_compile train.py rl/hyperparams.py rl/sac.py rl/ppo_optimized.py crowd_sim/utils.py config/config.py crowd_nav/rl_policy_factory.py)",
+      "Bash(python -m py_compile config/config.py)",
+      "Bash(ls -la eval/*.py)",
+      "Bash(WANDB_MODE=disabled /Users/lawliet/anaconda3/envs/ppo/bin/python train.py trainer=ppo method=rl num_envs=1 total_timesteps=2000 device=cpu model_folder=smoke_wandb_check save_after_timesteps=0 save_freq=1000)"
+    ]
+  }
+}

@@ -1,0 +1,24 @@
+name: rl-cvar-cbf
+channels:
+  - pytorch
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - pip
+  - numpy
+  - scipy
+  - matplotlib
+  - pandas
+  - imageio
+  - gymnasium
+  - hydra-core
+  - omegaconf
+  - cvxpy
+  - cvxopt
+  - pytorch
+  - torchvision
+  - cpuonly
+  - pip:
+      - qpth
+      - wandb

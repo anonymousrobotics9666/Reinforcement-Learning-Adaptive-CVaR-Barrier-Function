@@ -1,0 +1,17 @@
+# @package _global_
+# PPO algorithm hyperparameters.
+
+gamma: 0.99
+eval_freq_timesteps: 200000
+eval_episodes: 50
+
+n_updates_per_iteration: 8
+timesteps_per_batch: 8192
+num_minibatches: 32
+lr: 0.0001
+clip: 0.2
+lam: 0.98
+ent_coef: 0.01
+target_kl: 0.02
+max_grad_norm: 0.5
+action_std_init: 0.5

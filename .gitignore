@@ -1,0 +1,41 @@
+build/
+devel/
+logs/
+wandb/
+*.bag
+*.pt
+*.pth
+*.ckpt
+__pycache__/
+*.pyc
+
+.DS_Store
+.idea/
+.vscode/
+*.log
+
+/trained_models/
+# /trained_models/compare_baselines/
+# /trained_models/compare_baselines_backup/
+# /trained_models/compare_results_crowdnav/
+# /trained_models/compare_results_crowdnav_backup/
+# /trained_models/compare_results_ood/
+# /trained_models/results/
+# /trained_models/default/
+# /trained_models/env_test/
+# /trained_models/GST_predictor_rand/
+
+/results/
+/Python-RVO2/
+/il/demos/
+/il/bc_pretrain/
+/outputs/
+/il/
+/irsim_gym/
+/tests/
+
+# Local-only legacy algorithms kept out of the minimal open-source tree.
+/controller/adap_cvarbf_qp.py
+/controller/cvarbf_qp.py
+/controller/drcvarbf_qp.py
+/rl/network_qpth_v1.py
