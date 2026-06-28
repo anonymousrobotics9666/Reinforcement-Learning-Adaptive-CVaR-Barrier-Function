@@ -9,7 +9,7 @@ from gymnasium.vector import AsyncVectorEnv
 from omegaconf import OmegaConf
 
 from config.config import Config
-from crowd_sim.utils import build_env, dump_train_config, resolve_env_name
+from crowd_sim.utils import build_env, resolve_env_name
 from rl.run_utils import get_policy_kwargs, resolve_device, set_global_seeds
 
 
@@ -36,13 +36,7 @@ class Trainer:
         self.hyperparameters = self.build_hyperparameters()
 
         os.makedirs(self.save_dir, exist_ok=True)
-        dump_train_config(
-            self.save_dir,
-            self.config_dict,
-            self.config,
-            self.hyperparameters,
-            extra={"seed": cfg.seed, "method": cfg.method},
-        )
+        OmegaConf.save(config=self.cfg, f=os.path.join(self.save_dir, "config.yaml"), resolve=True)
         print(f"Models will be saved to: {self.save_dir}", flush=True)
         self.setup_wandb()
 
@@ -96,6 +90,7 @@ class Trainer:
             + self.config.robot_params["radius"]
         )
         return {
+            "model_config": self.cfg,
             "max_timesteps_per_episode": self.config.env.max_steps,
             "env_name": self.env_name,
             "seed": self.cfg.seed,

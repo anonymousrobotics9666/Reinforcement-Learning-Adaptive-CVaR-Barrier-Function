@@ -1,9 +1,9 @@
 """PPO training framework wrapper."""
 
 import os
+import torch
 
 from crowd_nav.rl_policy_factory import get_rl_policy_class
-from eval.policy_builder import load_actor_state_dict
 from rl.vec_ppo import VecPPO
 from trainer.trainer import Trainer
 
@@ -36,9 +36,12 @@ class PPOTrainer(Trainer):
 
         if actor_model:
             if not os.path.exists(actor_model):
-                raise FileNotFoundError(f"Actor checkpoint not found: {actor_model}")
-            model.actor.load_state_dict(load_actor_state_dict(actor_model, self.device))
-            loaded_parts.append(f"actor={actor_model}")
+                raise FileNotFoundError(f"Model checkpoint not found: {actor_model}")
+            state = torch.load(actor_model, map_location=self.device, weights_only=False)
+            if not (isinstance(state, dict) and "model" in state):
+                raise ValueError(f"Expected checkpoint with a top-level 'model' key: {actor_model}")
+            model.model.load_state_dict(state["model"], strict=True)
+            loaded_parts.append(f"model={actor_model}")
 
         if loaded_parts:
             print(f"Warm start loaded: {', '.join(loaded_parts)}", flush=True)

@@ -16,9 +16,8 @@ import numpy as np
 import torch
 import torch.nn as nn
 from torch.optim import Adam
-from torch.distributions import Normal, Independent
-from rl.network import FCNet
 from crowd_sim.utils import absolute_obs_batch_to_relative, select_top_k_obs
+from model.factory import build_model
 
 class PPO:
     """
@@ -54,32 +53,23 @@ class PPO:
         # num_humans blocks, the network attends to the first obs_top_k.
         self.obs_dim = 6 + int(self.obs_top_k) * 6
 
-        # Squashed Gaussian action mapping:
-        # z ~ N(mu, sigma), u=tanh(z) in [-1, 1], a=bias+scale*u in [low, high]
-        self.act_low = torch.tensor(act_space.low, dtype=torch.float32, device=self.device)
-        self.act_high = torch.tensor(act_space.high, dtype=torch.float32, device=self.device)
-        self.act_scale = 0.5 * (self.act_high - self.act_low)
-        self.act_bias = 0.5 * (self.act_high + self.act_low)
+        if getattr(self, "model_config", None) is None:
+            raise ValueError("PPO requires model_config to build the train/eval model")
 
-        # Initialize actor and critic networks
-        actor_kwargs = dict(
-            safe_dist=self.safe_dist,
-            alpha=self.alpha,
-            beta=self.beta,
-            robot_type=self.robot_type,
-            vmax=self.vmax,
-            amax=self.amax,
-            omega_max=self.omega_max,
-        )
-        actor_kwargs.update(getattr(self, "policy_kwargs", {}))
-
-        self.actor = policy_class(self.obs_dim, self.act_dim, **actor_kwargs).to(self.device)
-        # else:
-        self.critic = FCNet(self.obs_dim, 1).to(self.device)
-
-        # Learnable log std for action distribution (keeps QP differentiable)
-        init_std = self.action_std_init
-        self.log_std = nn.Parameter(torch.log(torch.full((self.act_dim,), init_std, device=self.device)))
+        self.model = build_model(
+            self.model_config,
+            self.obs_dim,
+            self.act_dim,
+            action_low=act_space.low,
+            action_high=act_space.high,
+        ).to(self.device)
+        self.actor = self.model.actor
+        self.critic = self.model.critic
+        self.log_std = self.model.log_std
+        self.act_low = self.model.act_low
+        self.act_high = self.model.act_high
+        self.act_scale = self.model.act_scale
+        self.act_bias = self.model.act_bias
 
         # Initialize optimizers for actor and critic
         self.actor_optim = Adam(list(self.actor.parameters()) + [self.log_std], lr=self.lr)
@@ -360,7 +350,8 @@ class PPO:
                         obs_rel = select_top_k_obs(absolute_obs_batch_to_relative(obs), self.obs_top_k)
                         obs_tensor = torch.tensor(obs_rel, dtype=torch.float).to(self.device).unsqueeze(0)
                         if hasattr(self, 'actor'):
-                            action_tensor, _ = self._squash_action(self.actor(obs_tensor))
+                            policy_action = self.model.get_action_deterministic(obs_tensor)
+                            action_tensor = self.model.policy_action_to_env_action(obs_tensor, policy_action)
                             action = action_tensor.detach().cpu().numpy()[0]
                         else:
                             raise ValueError("Actor model not found during evaluation")
@@ -589,37 +580,21 @@ class PPO:
         return V, log_probs, dist.entropy(), mean
 
     def _build_action_dist(self, mean):
-        std = torch.exp(self.log_std).clamp_min(1e-6)
-        return Independent(Normal(mean, std), 1)
+        return self.model.build_action_dist(mean)
 
     def _squash_action(self, z):
-        u = torch.tanh(z)
-        action = self.act_bias + self.act_scale * u
-        return action, u
+        return self.model.policy_action_to_env_action(None, z, return_squashed=True)
 
     def _unsquash_action(self, action):
-        scale = self.act_scale
-        bias = self.act_bias
-        while scale.dim() < action.dim():
-            scale = scale.unsqueeze(0)
-            bias = bias.unsqueeze(0)
-
-        u = (action - bias) / scale.clamp_min(1e-6)
-        u = u.clamp(-1.0 + 1e-6, 1.0 - 1e-6)
-        z = 0.5 * (torch.log1p(u) - torch.log1p(-u))  # atanh(u)
-        return z, u
+        return self.model.env_action_to_policy_action(action)
 
     def _squash_log_prob(self, base_log_prob, u):
-        # log|det(da/dz)| = sum(log(scale)) + sum(log(1 - tanh(z)^2))
-        # Here u = tanh(z), so term becomes log(1 - u^2).
-        tanh_logdet = torch.log(1.0 - u.pow(2) + 1e-6).sum(dim=-1)
-        scale_logdet = torch.log(self.act_scale.clamp_min(1e-6)).sum()
-        return base_log_prob - tanh_logdet - scale_logdet
+        return self.model.squash_log_prob(base_log_prob, u)
 
     def save_ckpt(self, save_dir, step, performance, max_keep=10):
         os.makedirs(save_dir, exist_ok=True)
         path = os.path.join(save_dir, f"ckpt_{int(step):08d}.pt")
-        torch.save({"model": self.actor.state_dict(), "step": int(step)}, path)
+        torch.save({"model": self.model.state_dict(), "step": int(step)}, path)
 
         manifest_path = os.path.join(save_dir, "ckpt_manifest.json")
         if os.path.exists(manifest_path):

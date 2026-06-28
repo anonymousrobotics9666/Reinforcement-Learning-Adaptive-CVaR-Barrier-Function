@@ -268,7 +268,7 @@ class DiffCVaRBFQP(nn.Module):
         J[:, 1, 0] = s
         J[:, 1, 1] = epsilon * c
 
-        # Cost (match controller/cbf_qp.py):
+        # Lookahead unicycle CBF-QP objective:
         # min ||J u - u_nom_xy||^2
         JT = J.transpose(1, 2)
         Q = 2.0 * torch.bmm(JT, J)

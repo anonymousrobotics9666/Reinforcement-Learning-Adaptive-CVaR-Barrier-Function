@@ -32,6 +32,9 @@ __pycache__/
 /outputs/
 /il/
 /irsim_gym/
+/test/smoke*/
+/test/**/smoke*
+!/test/smoke_test.py
 /tests/
 
 # Local-only legacy algorithms kept out of the minimal open-source tree.

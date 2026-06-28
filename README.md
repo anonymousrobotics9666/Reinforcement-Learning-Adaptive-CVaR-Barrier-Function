@@ -1,26 +1,25 @@
 # RL Adaptive CVaR-CBF
 
-This repository contains reinforcement-learning and optimization-based controllers for crowd navigation with control barrier function (CBF) and CVaR-CBF safety constraints.
+This repository contains reinforcement-learning policies for crowd navigation with control barrier function (CBF) and CVaR-CBF safety constraints.
 
-The current codebase is organized around four entrypoints:
+The current codebase is organized around two entrypoints:
 
 | Entrypoint | Purpose |
 | --- | --- |
 | `scripts/run_ppo_base.py` | PPO training for RL policies |
-| `main_test.py` | Single-checkpoint RL policy evaluation |
-| `main_opt.py` | Evaluation for optimization/controller baselines |
-| `eval/eval.py` | Batch evaluation of saved checkpoints across multiple seeds |
+| `scripts/eval.py` | Evaluate one or all saved RL checkpoints |
 
 ## Repository Layout
 
 ```text
 config/       Hydra configs and the Config adapter
-controller/   Nominal/social-force helpers and the CBF-QP baseline controller
+controller/   Batched trajectory prediction helper used by DiffCVaR-CBF
 crowd_nav/    Policy helpers and RL policy factory
 crowd_sim/    Gymnasium navigation environments
-eval/         Rollout helpers and checkpoint evaluation
+model/        Actor-critic wrapper and model factory
 rl/           PPO algorithm and policy networks
 scripts/      Runnable training scripts
+test/         Smoke tests; generated artifacts are ignored
 trainer/      Training framework, W&B setup, environments, and run lifecycle
 ```
 
@@ -43,7 +42,7 @@ results/
 
 ## Configuration
 
-The project uses Hydra YAML configs. `config/config.py` adapts a Hydra `DictConfig` into the object-style config used by the simulator and controllers.
+The project uses Hydra YAML configs. `config/config.py` adapts a Hydra `DictConfig` into the object-style config used by the simulator and training code.
 
 Main config files:
 
@@ -51,8 +50,6 @@ Main config files:
 | --- | --- |
 | `config/trainer/train.yaml` | PPO training entry config for `scripts/run_ppo_base.py` |
 | `config/trainer/ppo.yaml` | PPO hyperparameters |
-| `config/trainer/test.yaml` | Single-checkpoint test config for `main_test.py` |
-| `config/eval_opt.yaml` | Controller evaluation config for `main_opt.py` |
 | `config/env/env.yaml` | Environment, human, controller, and reward defaults |
 | `config/env/robot/single_integrator.yaml` | Single-integrator robot preset |
 | `config/env/robot/unicycle.yaml` | Unicycle robot preset |
@@ -144,88 +141,63 @@ Training outputs are written to:
 trained_models/<model_folder>/<timestamp>_<robot>_<method>_seed<seed>/
 ```
 
-The run folder contains `train_config.json`, `ckpt_<step>.pt` checkpoints, and `ckpt_manifest.json`.
+The run folder contains `config.yaml`, `ckpt_<step>.pt` checkpoints, and `ckpt_manifest.json`.
 
-## Testing One RL Checkpoint
+## Smoke Test
 
-Use the checkpoint's saved config for reproducible evaluation:
-
-```bash
-python main_test.py \
-  method=diffcvarbfqp \
-  actor_model=trained_models/default/<run>/ckpt_<step>.pt \
-  config_json=trained_models/default/<run>/train_config.json \
-  test_ep=100 \
-  episode_seed_start=100
-```
-
-Run exactly one seed:
+Run this after code changes to check config loading, environment stepping, policy construction, checkpoint loading, and one short eval episode:
 
 ```bash
-python main_test.py \
-  method=diffcvarbfqp \
-  actor_model=trained_models/default/<run>/ckpt_<step>.pt \
-  config_json=trained_models/default/<run>/train_config.json \
-  episode_seeds=472
+python test/smoke_test.py
 ```
 
-Use the current YAML config instead of a saved snapshot:
+Smoke-test artifacts are written under `test/smoke/`, which is ignored by git.
+
+## Eval
+
+Find a saved run and checkpoint:
 
 ```bash
-python main_test.py \
-  method=diffcvarbfqp \
-  actor_model=trained_models/default/<run>/ckpt_<step>.pt \
-  use_current_config=true \
-  test_ep=20
+ls trained_models/default
+ls trained_models/default/<run>/ckpt_*.pt
 ```
 
-By default, test mode saves GIFs using `rgb_array`. Set `render=true` to open a live window instead.
-Use `save_gifs=false` to skip GIF writing, or `max_gifs=N` to cap saved animations.
-
-## Evaluating Controller Baselines
-
-Controller baselines are run with `main_opt.py`:
+Evaluate all checkpoints:
 
 ```bash
-python main_opt.py \
-  method=cbfqp \
-  config_json=trained_models/default/<run>/train_config.json \
-  test_ep=100 \
-  episode_seed_start=100
+python scripts/eval.py \
+  --save-dir trained_models/default/<run>
 ```
 
-Supported controller methods include:
+Evaluate one checkpoint:
+
+```bash
+python scripts/eval.py \
+  --save-dir trained_models/default/<run> \
+  --checkpoint trained_models/default/<run>/ckpt_<step>.pt
+```
+
+Save rollout GIFs during eval:
+
+```bash
+python scripts/eval.py \
+  --save-dir trained_models/default/<run> \
+  --checkpoint trained_models/default/<run>/ckpt_<step>.pt \
+  --visualize
+```
+
+Eval writes `eval_results.json` in the run directory. Videos are saved under:
 
 ```text
-nominal
-cbfqp
-```
-
-## Batch Checkpoint Evaluation
-
-Evaluate all actor checkpoints in a run directory:
-
-```bash
-python eval/eval.py \
-  --actor_model trained_models/default/<run> \
-  --method diffcvarbfqp \
-  --episodes_per_seed 100
-```
-
-The script writes:
-
-```text
-checkpoint_eval_all_multiseed.json
+trained_models/default/<run>/visualize_<checkpoint_name>/
 ```
 
 ## Outputs
 
 | Command | Output |
 | --- | --- |
-| `scripts/run_ppo_base.py` | `trained_models/<model_folder>/<run>/train_config.json`, `ckpt_<step>.pt`, `ckpt_manifest.json` |
-| `main_test.py` | `<checkpoint-dir>/<timestamp>_ckpt_.../test_config.json`, `eval_log.json`, GIFs |
-| `main_opt.py` | `trained_models/<model_folder>/<robot>_<method>/<timestamp>/test_config.json`, `eval_log.json`, GIFs |
-| `eval/eval.py` | `checkpoint_eval_all_multiseed.json` under the evaluated run or compare directory |
+| `scripts/run_ppo_base.py` | `trained_models/<model_folder>/<run>/config.yaml`, `ckpt_<step>.pt`, `ckpt_manifest.json` |
+| `scripts/eval.py` | `eval_results.json`, optional `visualize_<checkpoint_name>/` GIFs |
 
 ## Notes
 
