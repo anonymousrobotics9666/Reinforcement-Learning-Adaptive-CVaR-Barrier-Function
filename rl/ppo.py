@@ -4,7 +4,10 @@
             It can be found here: https://spinningup.openai.com/en/latest/_images/math/e62a8971472597f4b014c2da064f636ffe365ba3.svg
 """
 
+import glob
+import json
 import os
+import re
 import time
 import wandb
 
@@ -36,9 +39,8 @@ class PPO:
         # Initialize hyperparameters for training with PPO
         self._init_hyperparameters(hyperparameters)
 
-        # New: Evaluation Env and Debug Mode
+        # Evaluation state
         self.last_eval_timestep = 0
-        self.best_success_rate = -1.0
 
         # Extract environment information
         self.env = env
@@ -122,9 +124,6 @@ class PPO:
         """
         print(f"Learning... Running {self.max_timesteps_per_episode} timesteps per episode, ", end='')
         print(f"{self.timesteps_per_batch} timesteps per batch for a total of {total_timesteps} timesteps")
-        next_timestep_save = None
-        if self.save_freq > 0:
-            next_timestep_save = self.save_after_timesteps if self.save_after_timesteps > 0 else self.save_freq
         t_so_far = 0 # Timesteps simulated so far
         i_so_far = 0 # Iterations ran so far
         num_updates = max(1, int(np.ceil(total_timesteps / max(self.timesteps_per_batch, 1))))
@@ -155,12 +154,6 @@ class PPO:
             
             # Increment the number of iterations
             i_so_far += 1
-
-            # Save checkpoints by timestep schedule (if configured).
-            while next_timestep_save is not None and t_so_far >= next_timestep_save:
-                self._save_model_files(suffix=f"step_{int(next_timestep_save)}")
-                print(f"Saved timestep checkpoint at {int(next_timestep_save)} steps.", flush=True)
-                next_timestep_save += self.save_freq
 
             # Logging timesteps so far and iterations so far
             self.logger['t_so_far'] = t_so_far
@@ -323,6 +316,12 @@ class PPO:
             eval_metrics = None
             if self._should_eval(i_so_far, num_updates, t_so_far, total_timesteps):
                 eval_metrics = self.evaluate_policy_internal(K=max(1, self.eval_episodes), step=t_so_far)
+                self.save_ckpt(
+                    self.save_dir,
+                    step=t_so_far,
+                    performance=eval_metrics["mean_return"],
+                    max_keep=int(self.max_checkpoints),
+                )
 
             sps = int(t_so_far / max(time.time() - start_time, 1e-6))
             self._log_summary(eval_metrics=eval_metrics, num_updates=num_updates, sps=sps)
@@ -383,11 +382,6 @@ class PPO:
         success_rate = success_count / total_episodes
         collision_rate = collision_count / total_episodes
         timeout_rate = timeout_count / total_episodes
-
-        if success_rate > self.best_success_rate:
-            self.best_success_rate = float(success_rate)
-            best_path = os.path.join(self.save_dir, "ppo_actor_best.pth")
-            torch.save(self.actor.state_dict(), best_path)
 
         return {
             "mean_return": float(avg_ret),
@@ -622,12 +616,45 @@ class PPO:
         scale_logdet = torch.log(self.act_scale.clamp_min(1e-6)).sum()
         return base_log_prob - tanh_logdet - scale_logdet
 
-    def _save_model_files(self, suffix=None):
-        name_suffix = "" if suffix is None else f"_{suffix}"
-        actor_path = os.path.join(self.save_dir, f"ppo_actor{name_suffix}.pth")
-        critic_path = os.path.join(self.save_dir, f"ppo_critic{name_suffix}.pth")
-        torch.save(self.actor.state_dict(), actor_path)
-        torch.save(self.critic.state_dict(), critic_path)
+    def save_ckpt(self, save_dir, step, performance, max_keep=10):
+        os.makedirs(save_dir, exist_ok=True)
+        path = os.path.join(save_dir, f"ckpt_{int(step):08d}.pt")
+        torch.save({"model": self.actor.state_dict(), "step": int(step)}, path)
+
+        manifest_path = os.path.join(save_dir, "ckpt_manifest.json")
+        if os.path.exists(manifest_path):
+            with open(manifest_path, "r", encoding="utf-8") as f:
+                manifest = json.load(f)
+        else:
+            manifest = {}
+
+        for ckpt_path in glob.glob(os.path.join(save_dir, "ckpt_*.pt")):
+            name = os.path.basename(ckpt_path)
+            if name not in manifest:
+                match = re.search(r"ckpt_(\d+)\.pt$", name)
+                manifest[name] = {
+                    "step": int(match.group(1)) if match else 0,
+                    "performance": float("-inf"),
+                }
+        manifest[os.path.basename(path)] = {"step": int(step), "performance": float(performance)}
+
+        keep = {
+            name
+            for name, _info in sorted(
+                manifest.items(),
+                key=lambda item: item[1]["performance"],
+                reverse=True,
+            )[: int(max_keep)]
+        }
+        for name in list(manifest):
+            if name not in keep:
+                old_path = os.path.join(save_dir, name)
+                if os.path.exists(old_path):
+                    os.remove(old_path)
+                del manifest[name]
+        with open(manifest_path, "w", encoding="utf-8") as f:
+            json.dump(manifest, f, indent=2)
+        return path
 
     def _init_hyperparameters(self, hyperparameters):
         # Initialize default values for hyperparameters
@@ -645,8 +672,6 @@ class PPO:
         self.target_kl = 0.02                           # KL Divergence threshold
         self.max_grad_norm = 0.5                        # Gradient Clipping threshold
         self.action_std_init = 0.5                       # Initial action std (learnable)
-        self.save_after_timesteps = 0                    # First timestep to save checkpoint (0 means disabled)
-        self.save_freq = 0                  # Checkpoint interval in timesteps (0 means disabled)
         self.eval_interval = 100                         # Eval cadence in PPO updates
         self.eval_freq_timesteps = 200000                # Eval cadence in timesteps
         self.eval_episodes = 50                          # Episodes per periodic evaluation

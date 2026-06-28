@@ -53,10 +53,6 @@ def load_test_config_snapshot(config, args):
 def checkpoint_tag(actor_model):
     actor_file = os.path.basename(actor_model)
     stem, _ = os.path.splitext(actor_file)
-    if "_step_" in stem:
-        return stem.rsplit("_step_", 1)[-1]
-    if stem.endswith("_best"):
-        return "best"
     return stem
 
 

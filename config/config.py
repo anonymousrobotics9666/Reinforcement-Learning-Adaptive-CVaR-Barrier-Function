@@ -49,7 +49,7 @@ class Config:
         if "obs_top_k" not in self.env and "max_obstacles_obs" in self.env:
             self.env["obs_top_k"] = self.env["max_obstacles_obs"]
 
-        # Snake-case aliases used throughout crowd_sim, crowd_nav, controller, main_vec.
+        # Snake-case aliases used throughout crowd_sim, crowd_nav, controller, and trainer.
         self.env_params = self.env
         self.human_params = self.human
         self.robot_params = self.robot

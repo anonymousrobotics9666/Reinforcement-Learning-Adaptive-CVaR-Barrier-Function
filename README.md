@@ -6,7 +6,7 @@ The current codebase is organized around four entrypoints:
 
 | Entrypoint | Purpose |
 | --- | --- |
-| `main_vec.py` | PPO training for RL policies |
+| `scripts/run_ppo_base.py` | PPO training for RL policies |
 | `main_test.py` | Single-checkpoint RL policy evaluation |
 | `main_opt.py` | Evaluation for optimization/controller baselines |
 | `eval/eval.py` | Batch evaluation of saved checkpoints across multiple seeds |
@@ -19,7 +19,9 @@ controller/   Nominal/social-force helpers and the CBF-QP baseline controller
 crowd_nav/    Policy helpers and RL policy factory
 crowd_sim/    Gymnasium navigation environments
 eval/         Rollout helpers and checkpoint evaluation
-rl/           PPO trainer and policy networks
+rl/           PPO algorithm and policy networks
+scripts/      Runnable training scripts
+trainer/      Training framework, W&B setup, environments, and run lifecycle
 ```
 
 ## Installation
@@ -47,7 +49,7 @@ Main config files:
 
 | File | Purpose |
 | --- | --- |
-| `config/trainer/train.yaml` | PPO training entry config for `main_vec.py` |
+| `config/trainer/train.yaml` | PPO training entry config for `scripts/run_ppo_base.py` |
 | `config/trainer/ppo.yaml` | PPO hyperparameters |
 | `config/trainer/test.yaml` | Single-checkpoint test config for `main_test.py` |
 | `config/eval_opt.yaml` | Controller evaluation config for `main_opt.py` |
@@ -58,13 +60,13 @@ Main config files:
 Override config values on the command line with Hydra syntax:
 
 ```bash
-python main_vec.py method=diffcvarbfqp total_timesteps=1000000
+python scripts/run_ppo_base.py method=diffcvarbfqp total_timesteps=1000000
 ```
 
 Use a different robot preset:
 
 ```bash
-python main_vec.py method=diffcvarbfqp env/robot=unicycle
+python scripts/run_ppo_base.py method=diffcvarbfqp env/robot=unicycle
 ```
 
 ## Observation Pipeline
@@ -109,29 +111,30 @@ diffcvarbfqp
 Train a vanilla PPO MLP policy:
 
 ```bash
-python main_vec.py method=vanilla_ppo
+python scripts/run_ppo_base.py method=vanilla_ppo
 ```
 
 Train the differentiable CVaR-BF-QP policy:
 
 ```bash
-python main_vec.py method=diffcvarbfqp
+python scripts/run_ppo_base.py method=diffcvarbfqp
 ```
 
-Weights & Biases logging is disabled by default. Enable it explicitly when needed:
+Weights & Biases logging follows the `diff_opt` defaults:
 
 ```bash
-python main_vec.py method=diffcvarbfqp wandb.enabled=true
+wandb login
+python scripts/run_ppo_base.py method=diffcvarbfqp wandb_entity=xinywa_umich wandb_project=diff_cvar
 ```
 
 Short debug run:
 
 ```bash
-python main_vec.py \
+python scripts/run_ppo_base.py \
   method=diffcvarbfqp \
   num_envs=4 \
   total_timesteps=200000 \
-  eval_freq_timesteps=0 \
+  eval_interval=1 \
   model_folder=debug
 ```
 
@@ -141,7 +144,7 @@ Training outputs are written to:
 trained_models/<model_folder>/<timestamp>_<robot>_<method>_seed<seed>/
 ```
 
-The run folder contains `train_config.json` and PPO actor/critic checkpoints.
+The run folder contains `train_config.json`, `ckpt_<step>.pt` checkpoints, and `ckpt_manifest.json`.
 
 ## Testing One RL Checkpoint
 
@@ -150,7 +153,7 @@ Use the checkpoint's saved config for reproducible evaluation:
 ```bash
 python main_test.py \
   method=diffcvarbfqp \
-  actor_model=trained_models/default/<run>/ppo_actor_step_7000000.pth \
+  actor_model=trained_models/default/<run>/ckpt_<step>.pt \
   config_json=trained_models/default/<run>/train_config.json \
   test_ep=100 \
   episode_seed_start=100
@@ -161,7 +164,7 @@ Run exactly one seed:
 ```bash
 python main_test.py \
   method=diffcvarbfqp \
-  actor_model=trained_models/default/<run>/ppo_actor_step_7000000.pth \
+  actor_model=trained_models/default/<run>/ckpt_<step>.pt \
   config_json=trained_models/default/<run>/train_config.json \
   episode_seeds=472
 ```
@@ -171,7 +174,7 @@ Use the current YAML config instead of a saved snapshot:
 ```bash
 python main_test.py \
   method=diffcvarbfqp \
-  actor_model=trained_models/default/<run>/ppo_actor_step_7000000.pth \
+  actor_model=trained_models/default/<run>/ckpt_<step>.pt \
   use_current_config=true \
   test_ep=20
 ```
@@ -219,7 +222,7 @@ checkpoint_eval_all_multiseed.json
 
 | Command | Output |
 | --- | --- |
-| `main_vec.py` | `trained_models/<model_folder>/<run>/train_config.json`, actor checkpoints, critic checkpoints |
+| `scripts/run_ppo_base.py` | `trained_models/<model_folder>/<run>/train_config.json`, `ckpt_<step>.pt`, `ckpt_manifest.json` |
 | `main_test.py` | `<checkpoint-dir>/<timestamp>_ckpt_.../test_config.json`, `eval_log.json`, GIFs |
 | `main_opt.py` | `trained_models/<model_folder>/<robot>_<method>/<timestamp>/test_config.json`, `eval_log.json`, GIFs |
 | `eval/eval.py` | `checkpoint_eval_all_multiseed.json` under the evaluated run or compare directory |
@@ -228,4 +231,4 @@ checkpoint_eval_all_multiseed.json
 
 - `config.env.rl_xy_to_unicycle=false`: unicycle actions are interpreted as `[v, omega]`.
 - `config.env.rl_xy_to_unicycle=true`: policy actions are interpreted as `[vx, vy]` and converted to unicycle controls inside the environment.
-- Weights & Biases logging is optional and disabled by default through `wandb.enabled=false`.
+- Weights & Biases uses `wandb_entity`, `wandb_project`, and `wandb_interval`, matching `diff_opt`.

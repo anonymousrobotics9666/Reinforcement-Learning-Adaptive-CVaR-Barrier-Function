@@ -29,6 +29,15 @@ def obs_top_k_from_config(config):
     return int(config.env_params.get("obs_top_k", config.env_params.get("max_obstacles_obs", 1)))
 
 
+def load_actor_state_dict(checkpoint_path, device):
+    state = torch.load(checkpoint_path, map_location=device)
+    if not (isinstance(state, dict) and "model" in state):
+        raise ValueError(
+            f"Expected diff_opt-style checkpoint with a top-level 'model' key: {checkpoint_path}"
+        )
+    return state["model"]
+
+
 def build_eval_actor(config, method, env, actor_model, device, verbose=True):
     obs_top_k = obs_top_k_from_config(config)
     obs_dim = 6 + obs_top_k * 6
@@ -41,6 +50,6 @@ def build_eval_actor(config, method, env, actor_model, device, verbose=True):
         print(f"Policy Args: {policy_kwargs}", flush=True)
 
     policy = PolicyClass(obs_dim, act_dim, **policy_kwargs).to(device)
-    policy.load_state_dict(torch.load(actor_model, map_location=device))
+    policy.load_state_dict(load_actor_state_dict(actor_model, device))
     policy.eval()
     return RLEvalActorAdapter(policy, env.action_space, device, obs_top_k=obs_top_k)

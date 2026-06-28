@@ -29,8 +29,10 @@ EVAL_SUMMARY_FILENAME = "checkpoint_eval_all_multiseed.json"
 
 def _extract_step(path: str) -> int:
     base = os.path.basename(path).lower()
-    match = re.search(r"(?:^|[_-])step[_-]?(\d+)", base)
-    return int(match.group(1)) if match else -1
+    match = re.search(r"ckpt_(\d+)\.pt$", base)
+    if not match:
+        raise ValueError(f"Expected checkpoint filename format ckpt_<step>.pt: {path}")
+    return int(match.group(1))
 
 
 def _resolve_run_dir(actor_model: str) -> str:
@@ -59,27 +61,16 @@ def _load_run_config(run_dir: str) -> tuple[Config, Dict[str, Any], str]:
 
 def discover_checkpoints(run_dir: str) -> List[Dict[str, Any]]:
     entries: List[Dict[str, Any]] = []
-    for path in sorted(glob.glob(os.path.join(run_dir, "*.pth"))):
-        fname = os.path.basename(path)
-        lower = fname.lower()
-        if "actor" not in lower or "critic" in lower:
-            continue
-        if any(tok in lower for tok in ("optim", "optimizer", "sched", "scaler")):
-            continue
-
+    ckpt_paths = sorted(glob.glob(os.path.join(run_dir, "ckpt_*.pt")))
+    for path in ckpt_paths:
         entries.append(
             {
                 "path": path,
                 "step": _extract_step(path),
-                "is_best": "best" in lower,
+                "is_best": False,
             }
         )
-
-    def _sort_key(item: Dict[str, Any]):
-        step = item["step"] if item["step"] >= 0 else 10**18
-        return (0 if item["is_best"] else 1, step, item["path"])
-
-    entries.sort(key=_sort_key)
+    entries.sort(key=lambda item: (item["step"], item["path"]))
     return entries
 
 
