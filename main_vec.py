@@ -1,6 +1,7 @@
 """Train PPO policies with vectorized environments."""
 
 import os
+import shutil
 from datetime import datetime
 
 import hydra
@@ -66,8 +67,11 @@ def build_ppo_hyperparameters(args, base_hyperparameters):
         "target_kl": args.target_kl,
         "max_grad_norm": args.max_grad_norm,
         "action_std_init": args.action_std_init,
+        "eval_interval": args.eval_interval,
         "eval_freq_timesteps": args.eval_freq_timesteps,
         "eval_episodes": args.eval_episodes,
+        "max_checkpoints": args.max_checkpoints,
+        "wandb_interval": args.wandb_interval,
     })
     return hyperparameters
 
@@ -116,6 +120,40 @@ def ensure_unique_exp_name(base_root, exp_name):
         candidate = f"{exp_name}_{idx}"
         idx += 1
     return candidate
+
+
+def build_config_run_name(args):
+    run_name = args.get("run_name")
+    if run_name is None or not str(run_name):
+        return None
+
+    name = (
+        f"{run_name}-{args.method}"
+        f"-bs{int(args.timesteps_per_batch)}"
+        f"-ep{int(args.n_updates_per_iteration)}"
+        f"-lr{float(args.lr):.1e}"
+    )
+    if float(args.ent_coef) > 0.0:
+        name += f"-ent{args.ent_coef}"
+    return name
+
+
+def setup_wandb(args, run_name, config_dict):
+    wandb_cfg = getattr(args, "wandb", {}) or {}
+    if not bool(wandb_cfg.get("enabled", True)):
+        return None
+
+    project = str(args.get("wandb_project") or wandb_cfg.get("project"))
+    entity = str(args.get("wandb_entity") or wandb_cfg.get("entity"))
+    run = wandb.init(
+        project=project,
+        entity=entity,
+        name=run_name,
+        config=config_dict,
+    )
+    wandb.define_metric("global_step")
+    wandb.define_metric("*", step_metric="global_step")
+    return run
 
 
 def load_warm_start(model, actor_model, critic_model, device):
@@ -167,19 +205,26 @@ def main(cfg: DictConfig):
     env_name = resolve_env_name(config)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    train_root = os.path.join(".", "trained_models", args.model_folder)
-    exp_name = derive_train_exp_name(
-        timestamp=timestamp,
-        robot_type=config.robot_params["type"],
-        method=args.method,
-        actor_model=args.actor_model,
-        seed=int(args.seed),
-        total_timesteps=int(args.total_timesteps),
-        lr=float(args.lr),
-        num_humans=int(config.human.num_humans),
-    )
-    exp_name = ensure_unique_exp_name(train_root, exp_name)
+    train_root = str(args.get("save_dir") or os.path.join(".", "trained_models", args.model_folder))
+    exp_name = build_config_run_name(args)
+    if exp_name is None:
+        exp_name = derive_train_exp_name(
+            timestamp=timestamp,
+            robot_type=config.robot_params["type"],
+            method=args.method,
+            actor_model=args.actor_model,
+            seed=int(args.seed),
+            total_timesteps=int(args.total_timesteps),
+            lr=float(args.lr),
+            num_humans=int(config.human.num_humans),
+        )
+        exp_name = ensure_unique_exp_name(train_root, exp_name)
     save_dir = os.path.join(train_root, exp_name)
+    if os.path.exists(save_dir):
+        if bool(args.get("overwrite", False)):
+            shutil.rmtree(save_dir)
+        else:
+            raise ValueError(f"Save directory {save_dir} already exists; set overwrite=true to replace it")
 
     base_hyperparameters = build_base_hyperparameters(
         args=args,
@@ -200,13 +245,7 @@ def main(cfg: DictConfig):
     )
     print(f"Models will be saved to: {save_dir}", flush=True)
 
-    wandb_cfg = getattr(args, "wandb", {}) or {}
-    if bool(wandb_cfg.get("enabled", False)):
-        wandb.init(
-            project=wandb_cfg.get("project", "rl_adaptive_cvar_cbf"),
-            name=exp_name,
-            config=hyperparameters,
-        )
+    setup_wandb(args, exp_name, args_dict)
 
     num_envs = int(args.num_envs)
     if num_envs <= 0:
@@ -216,12 +255,7 @@ def main(cfg: DictConfig):
     vec_env = AsyncVectorEnv(env_fns)
     eval_env = None
 
-    if args.eval_freq_timesteps > 0:
-        print(
-            f"Periodic evaluation enabled every {args.eval_freq_timesteps} timesteps "
-            f"with {args.eval_episodes} episodes; creating eval environment...",
-            flush=True,
-        )
+    if args.eval_interval > 0 or args.eval_freq_timesteps > 0:
         eval_env = build_env(env_name, render_mode=None, config=config)
         hyperparameters["eval_env"] = eval_env
 
@@ -239,6 +273,8 @@ def main(cfg: DictConfig):
         vec_env.close()
         if eval_env is not None:
             eval_env.close()
+        if wandb.run is not None:
+            wandb.finish()
 
 
 if __name__ == "__main__":

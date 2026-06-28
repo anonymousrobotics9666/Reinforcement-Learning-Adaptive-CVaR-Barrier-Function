@@ -105,6 +105,9 @@ class PPO:
             'sigma_means': [],       # mean of sigma (exploration noise)
             'barrier_min_batch': [], # min barrier value in batch
             'barrier_avg_batch': [], # average barrier value in batch
+            'entropy_losses': [],
+            'approx_kls': [],
+            'clipfracs': [],
         }
 
     def learn(self, total_timesteps):
@@ -124,17 +127,13 @@ class PPO:
             next_timestep_save = self.save_after_timesteps if self.save_after_timesteps > 0 else self.save_freq
         t_so_far = 0 # Timesteps simulated so far
         i_so_far = 0 # Iterations ran so far
+        num_updates = max(1, int(np.ceil(total_timesteps / max(self.timesteps_per_batch, 1))))
+        start_time = time.time()
         while t_so_far < total_timesteps:                                                                       # ALG STEP 2
             # Autobots, roll out (just kidding, we're collecting our batch simulations here)
             batch_obs, batch_acts, batch_log_probs, batch_rews, batch_lens, batch_vals, batch_dones = self.rollout()                     # ALG STEP 3
             batch_steps = int(np.sum(batch_lens))
             t_so_far += batch_steps
-
-            # --- EVALUATION BLOCK ---
-            if self.eval_freq_timesteps > 0 and (t_so_far - self.last_eval_timestep) >= self.eval_freq_timesteps:
-                self.evaluate_policy_internal(K= max(1, self.eval_episodes), step=t_so_far)
-                self.last_eval_timestep = t_so_far
-            # ------------------------
 
             # --- Log Min Barrier (Worst Case Safety) ---
             # We compute this outside the main training loop to avoid slowing down backprop.
@@ -210,6 +209,9 @@ class PPO:
                     logratios = curr_log_probs - mini_log_prob
                     ratios = torch.exp(logratios)
                     approx_kl = ((ratios - 1) - logratios).mean()
+                    clipfrac = ((ratios - 1).abs() > self.clip).float().mean()
+                    self.logger['approx_kls'].append(float(approx_kl.detach().cpu()))
+                    self.logger['clipfracs'].append(float(clipfrac.detach().cpu()))
 
                     # Calculate surrogate losses.
                     surr1 = ratios * mini_advantage
@@ -225,6 +227,7 @@ class PPO:
 
                     # Entropy Regularization
                     entropy_loss = entropy.mean()
+                    self.logger['entropy_losses'].append(entropy_loss.detach().cpu())
                     # Discount entropy loss by given coefficient
                     actor_loss = actor_loss - self.ent_coef * entropy_loss                    
                     
@@ -317,79 +320,82 @@ class PPO:
             avg_loss = sum(loss) / len(loss)
             self.logger['actor_losses'].append(avg_loss.detach().cpu())
 
-            # Print a summary of our training so far
-            self._log_summary()
+            eval_metrics = None
+            if self._should_eval(i_so_far, num_updates, t_so_far, total_timesteps):
+                eval_metrics = self.evaluate_policy_internal(K=max(1, self.eval_episodes), step=t_so_far)
+
+            sps = int(t_so_far / max(time.time() - start_time, 1e-6))
+            self._log_summary(eval_metrics=eval_metrics, num_updates=num_updates, sps=sps)
+
+    def _should_eval(self, update, num_updates, t_so_far, total_timesteps):
+        if not hasattr(self, "eval_env"):
+            return False
+        if int(self.eval_interval) > 0:
+            return update % int(self.eval_interval) == 0 or update == 1 or t_so_far >= total_timesteps
+        if self.eval_freq_timesteps > 0 and (t_so_far - self.last_eval_timestep) >= self.eval_freq_timesteps:
+            self.last_eval_timestep = t_so_far
+            return True
+        return update == num_updates
 
 
     def evaluate_policy_internal(self, K, step):
-        print(f"Evaluating policy at step {step}...", flush=True)
+        episodes = int(K)
         ret_list = []
         len_list = []
         success_count = 0
         collision_count = 0
+        timeout_count = 0
+        total_episodes = 0
 
-        for _ in range(K):
-            obs, _ = self.eval_env.reset()
-            done = False
-            ep_ret = 0
-            ep_len = 0
-            is_success = False
-            is_collision = False
-            
-            while not done:
-                with torch.no_grad():
-                    obs_rel = select_top_k_obs(absolute_obs_batch_to_relative(obs), self.obs_top_k)
-                    obs_tensor = torch.tensor(obs_rel, dtype=torch.float).to(self.device).unsqueeze(0) # Add batch dim
-                    # Use mean action directly (deterministic)
-                    if hasattr(self, 'actor'):
-                        action_tensor, _ = self._squash_action(self.actor(obs_tensor))
-                        action = action_tensor.detach().cpu().numpy()[0] # Remove batch dim
-                    else:
-                        raise ValueError("Actor model not found during evaluation")
+        seeds = list(range(100, 1000 + 1, 100))
+        for seed in seeds:
+            for ep in range(episodes):
+                obs, _ = self.eval_env.reset(seed=seed + ep)
+                done = False
+                ep_ret = 0.0
+                ep_len = 0
+                info = {}
 
-                obs, reward, terminated, truncated, info = self.eval_env.step(action)
-                done = terminated | truncated
-                ep_ret += reward
-                ep_len += 1
-                
-                if info.get('is_success', False): is_success = True
-                if info.get('is_collision', False): is_collision = True
-            
-            ret_list.append(ep_ret)
-            len_list.append(ep_len)
-            if is_success: success_count += 1
-            if is_collision: collision_count += 1
+                while not done:
+                    with torch.no_grad():
+                        obs_rel = select_top_k_obs(absolute_obs_batch_to_relative(obs), self.obs_top_k)
+                        obs_tensor = torch.tensor(obs_rel, dtype=torch.float).to(self.device).unsqueeze(0)
+                        if hasattr(self, 'actor'):
+                            action_tensor, _ = self._squash_action(self.actor(obs_tensor))
+                            action = action_tensor.detach().cpu().numpy()[0]
+                        else:
+                            raise ValueError("Actor model not found during evaluation")
+
+                    obs, reward, terminated, truncated, info = self.eval_env.step(action)
+                    done = bool(terminated or truncated)
+                    ep_ret += float(reward)
+                    ep_len += 1
+
+                ret_list.append(ep_ret)
+                len_list.append(ep_len)
+                total_episodes += 1
+                success_count += int(info.get('is_success', info.get('reached', False)))
+                collision_count += int(info.get('is_collision', info.get('collision', False)))
+                timeout_count += int(info.get('is_timeout', info.get('timeout', False)))
 
         avg_ret = np.mean(ret_list)
         std_ret = np.std(ret_list)
-        avg_len = np.mean(len_list)
-        success_rate = success_count / K
-        collision_rate = collision_count / K
-        
-        print(
-            f"Eval result at step {step}: return={avg_ret:.2f}+/-{std_ret:.2f}, "
-            f"success={success_rate:.2f}, collision={collision_rate:.2f}",
-            flush=True,
-        )
-        
-        # Log to wandb if initialized
-        if wandb.run is not None:
-            wandb.log({
-                "eval/return_mean": avg_ret,
-                "eval/return_std": std_ret,
-                "eval/ep_length_mean": avg_len,
-                "eval/success_rate": success_rate,
-                "eval/collision_rate": collision_rate
-            }, step=step)
+        success_rate = success_count / total_episodes
+        collision_rate = collision_count / total_episodes
+        timeout_rate = timeout_count / total_episodes
 
         if success_rate > self.best_success_rate:
             self.best_success_rate = float(success_rate)
             best_path = os.path.join(self.save_dir, "ppo_actor_best.pth")
             torch.save(self.actor.state_dict(), best_path)
-            print(
-                f"Saved best actor at step {step} (success={success_rate:.3f})",
-                flush=True,
-            )
+
+        return {
+            "mean_return": float(avg_ret),
+            "std_return": float(std_ret),
+            "success_rate": float(success_rate),
+            "collision_rate": float(collision_rate),
+            "timeout_rate": float(timeout_rate),
+        }
 
     def calculate_gae(self, rewards, values, dones):
         batch_advantages = []  # List to store computed advantages for each timestep
@@ -641,8 +647,11 @@ class PPO:
         self.action_std_init = 0.5                       # Initial action std (learnable)
         self.save_after_timesteps = 0                    # First timestep to save checkpoint (0 means disabled)
         self.save_freq = 0                  # Checkpoint interval in timesteps (0 means disabled)
+        self.eval_interval = 100                         # Eval cadence in PPO updates
         self.eval_freq_timesteps = 200000                # Eval cadence in timesteps
         self.eval_episodes = 50                          # Episodes per periodic evaluation
+        self.max_checkpoints = 10                         # Kept for config parity with diff_opt
+        self.wandb_interval = 10                          # Train metric logging cadence in updates
 
         # Miscellaneous parameters
         self.render = False                             # If we should render during rollout
@@ -678,114 +687,100 @@ class PPO:
             torch.manual_seed(self.seed)
             print(f"Set training seed to {self.seed}", flush=True)
 
-    def _log_summary(self):
-        # Calculate logging values. I use a few python shortcuts to calculate each value
-        # without explaining since it's not too important to PPO; feel free to look it over,
-        # and if you have any questions you can email me (look at bottom of README)
-        delta_t = self.logger['delta_t']
-        self.logger['delta_t'] = time.time_ns()
-        delta_t = (self.logger['delta_t'] - delta_t) / 1e9
-        delta_t = str(round(delta_t, 2))
+    def _log_summary(self, eval_metrics=None, num_updates=None, sps=0):
+        t_so_far = int(self.logger['t_so_far'])
+        i_so_far = int(self.logger['i_so_far'])
+        lr = float(self.logger['lr'])
+        avg_ep_lens = float(np.mean(self.logger['batch_lens'])) if self.logger['batch_lens'] else np.nan
+        avg_ep_rews = (
+            float(np.mean([np.sum(ep_rews) for ep_rews in self.logger['batch_rews']]))
+            if self.logger['batch_rews']
+            else np.nan
+        )
+        avg_actor_loss = (
+            float(np.mean([losses.float().mean().item() for losses in self.logger['actor_losses']]))
+            if self.logger['actor_losses']
+            else np.nan
+        )
+        avg_critic_loss = (
+            float(np.mean([losses.float().mean().item() for losses in self.logger['critic_losses']]))
+            if self.logger['critic_losses']
+            else np.nan
+        )
+        avg_entropy = (
+            float(np.mean([losses.float().mean().item() for losses in self.logger['entropy_losses']]))
+            if self.logger['entropy_losses']
+            else np.nan
+        )
+        avg_approx_kl = float(np.mean(self.logger['approx_kls'])) if self.logger['approx_kls'] else np.nan
+        avg_clipfrac = float(np.mean(self.logger['clipfracs'])) if self.logger['clipfracs'] else np.nan
+        avg_actor_grad = float(np.mean(self.logger['actor_grads'])) if self.logger['actor_grads'] else np.nan
+        avg_critic_grad = float(np.mean(self.logger['critic_grads'])) if self.logger['critic_grads'] else np.nan
+        avg_policy_grad = float(np.mean(self.logger['u_norm_grads'])) if self.logger['u_norm_grads'] else np.nan
+        avg_cbf_grad = float(np.mean(self.logger['cbf_grads'])) if self.logger['cbf_grads'] else np.nan
+        avg_unom_head_grad = float(np.mean(self.logger['unom_head_grads'])) if self.logger['unom_head_grads'] else np.nan
+        avg_alpha_head_grad = float(np.mean(self.logger['alpha_head_grads'])) if self.logger['alpha_head_grads'] else np.nan
+        avg_beta_head_grad = float(np.mean(self.logger['beta_head_grads'])) if self.logger['beta_head_grads'] else np.nan
+        avg_rsafe_head_grad = float(np.mean(self.logger['rsafe_head_grads'])) if self.logger['rsafe_head_grads'] else np.nan
+        avg_mu = float(np.mean(self.logger['mu_means'])) if self.logger['mu_means'] else np.nan
+        avg_sigma = float(np.mean(self.logger['sigma_means'])) if self.logger['sigma_means'] else np.nan
+        min_barrier = float(self.logger.get('barrier_min_batch', np.nan))
+        avg_barrier = float(self.logger.get('barrier_avg_batch', np.nan))
+        completed = len(self.logger['batch_lens'])
 
-        t_so_far = self.logger['t_so_far']
-        i_so_far = self.logger['i_so_far']
-        lr = self.logger['lr']
-        avg_ep_lens = np.mean(self.logger['batch_lens'])
-        avg_ep_rews = np.mean([np.sum(ep_rews) for ep_rews in self.logger['batch_rews']])
-        avg_actor_loss = np.mean([losses.float().mean().item() for losses in self.logger['actor_losses']])
-        avg_critic_loss = np.mean([losses.float().mean().item() for losses in self.logger['critic_losses']]) if self.logger['critic_losses'] else 0.0
-        avg_actor_grad = np.mean(self.logger['actor_grads']) if self.logger['actor_grads'] else 0.0
-        avg_critic_grad = np.mean(self.logger['critic_grads']) if self.logger['critic_grads'] else 0.0
-        avg_policy_grad = np.mean(self.logger['u_norm_grads']) if self.logger['u_norm_grads'] else 0.0
-        avg_cbf_grad = np.mean(self.logger['cbf_grads']) if self.logger['cbf_grads'] else 0.0
-        avg_unom_head_grad = np.mean(self.logger['unom_head_grads']) if self.logger['unom_head_grads'] else 0.0
-        avg_alpha_head_grad = np.mean(self.logger['alpha_head_grads']) if self.logger['alpha_head_grads'] else 0.0
-        avg_beta_head_grad = np.mean(self.logger['beta_head_grads']) if self.logger['beta_head_grads'] else 0.0
-        avg_rsafe_head_grad = np.mean(self.logger['rsafe_head_grads']) if self.logger['rsafe_head_grads'] else 0.0
-        avg_mu = np.mean(self.logger['mu_means']) if self.logger['mu_means'] else 0.0
-        avg_sigma = np.mean(self.logger['sigma_means']) if self.logger['sigma_means'] else 0.0
-        min_barrier = self.logger.get('barrier_min_batch', 0.0)
-        avg_barrier = self.logger.get('barrier_avg_batch', 0.0)
-        n_episodes = max(len(self.logger['batch_lens']), 1)
-        timeout_rate = float(self.logger.get('n_timeout', 0)) / n_episodes
-        success_rate = float(self.logger.get('n_success', 0)) / n_episodes
-        collision_rate = float(self.logger.get('n_collision', 0)) / n_episodes
+        log_dict = {
+            "global_step": t_so_far,
+            "charts/learning_rate": lr,
+            "charts/ent_coef": float(self.ent_coef),
+            "charts/sps": int(sps),
+            "loss/policy": avg_actor_loss,
+            "loss/value": avg_critic_loss,
+            "loss/entropy": avg_entropy,
+            "loss/total": avg_actor_loss + avg_critic_loss if np.isfinite(avg_actor_loss + avg_critic_loss) else np.nan,
+            "diagnostics/approx_kl": avg_approx_kl,
+            "diagnostics/clipfrac": avg_clipfrac,
+            "diagnostics/actor_grad_norm": avg_actor_grad,
+            "diagnostics/critic_grad_norm": avg_critic_grad,
+            "diagnostics/policy_grad_norm": avg_policy_grad,
+            "diagnostics/cbf_grad_norm": avg_cbf_grad,
+            "diagnostics/unom_head_grad_norm": avg_unom_head_grad,
+            "diagnostics/alpha_head_grad_norm": avg_alpha_head_grad,
+            "diagnostics/beta_head_grad_norm": avg_beta_head_grad,
+            "diagnostics/rsafe_head_grad_norm": avg_rsafe_head_grad,
+            "diagnostics/action_mu": avg_mu,
+            "diagnostics/action_sigma": avg_sigma,
+            "safety/barrier_min_batch": min_barrier,
+            "safety/barrier_avg_batch": avg_barrier,
+        }
+        if completed > 0:
+            log_dict["train/episodic_return"] = avg_ep_rews
+            log_dict["train/episodic_length"] = avg_ep_lens
+            log_dict["train/success_rate"] = float(self.logger.get('n_success', 0)) / completed
+            log_dict["train/collision_rate"] = float(self.logger.get('n_collision', 0)) / completed
+            log_dict["train/timeout_rate"] = float(self.logger.get('n_timeout', 0)) / completed
+        if eval_metrics is not None:
+            log_dict["charts/eval_return_mean"] = eval_metrics["mean_return"]
+            log_dict["charts/eval_return_std"] = eval_metrics["std_return"]
+            log_dict["charts/eval_success_rate"] = eval_metrics["success_rate"]
+            log_dict["charts/eval_collision_rate"] = eval_metrics["collision_rate"]
+            log_dict["charts/eval_timeout_rate"] = eval_metrics["timeout_rate"]
 
         if wandb.run is not None:
-            wandb.log({
-                "iteration": i_so_far,
-                "timesteps": t_so_far,
-                "ep_len": avg_ep_lens,
-                "ep_reward": avg_ep_rews,
-                "actor_loss": avg_actor_loss,
-                "critic_loss": avg_critic_loss,
-                "actor_grad_norm": avg_actor_grad,
-                "critic_grad_norm": avg_critic_grad,
-                "policy_grad_norm": avg_policy_grad,
-                "cbf_grad_norm": avg_cbf_grad,
-                "unom_head_grad_norm": avg_unom_head_grad,
-                "alpha_head_grad_norm": avg_alpha_head_grad,
-                "beta_head_grad_norm": avg_beta_head_grad,
-                "rsafe_head_grad_norm": avg_rsafe_head_grad,
-                "action_mu": avg_mu,
-                "action_sigma": avg_sigma,
-                "barrier_min_batch": min_barrier,
-                "barrier_avg_batch": avg_barrier,
-                "timeout_rate": float(self.logger.get('n_timeout', 0)) / max(len(self.logger['batch_lens']), 1),
-                "success_rate": float(self.logger.get('n_success', 0)) / max(len(self.logger['batch_lens']), 1),
-                "collision_rate": float(self.logger.get('n_collision', 0)) / max(len(self.logger['batch_lens']), 1),
-                "iteration_time": float(delta_t),
-                "lr": lr,
-            }, step=t_so_far)
+            wandb_log = {key: value for key, value in log_dict.items() if not key.startswith("train/")}
+            if int(self.wandb_interval) <= 0:
+                raise ValueError("wandb_interval must be > 0")
+            if completed > 0 and i_so_far % int(self.wandb_interval) == 0:
+                wandb_log.update({key: value for key, value in log_dict.items() if key.startswith("train/")})
+            wandb.log(wandb_log, step=t_so_far)
 
-        # Round decimal places for more aesthetic logging messages
-        avg_ep_lens = str(round(avg_ep_lens, 2))
-        avg_ep_rews = str(round(avg_ep_rews, 2))
-        avg_actor_loss = str(round(avg_actor_loss, 5))
-        avg_critic_loss = str(round(avg_critic_loss, 5))
-        avg_actor_grad = str(round(avg_actor_grad, 5))
-        avg_critic_grad = str(round(avg_critic_grad, 5))
-        avg_policy_grad = str(round(avg_policy_grad, 5))
-        avg_cbf_grad = str(round(avg_cbf_grad, 5))
-        avg_unom_head_grad = str(round(avg_unom_head_grad, 5))
-        avg_alpha_head_grad = str(round(avg_alpha_head_grad, 5))
-        avg_beta_head_grad = str(round(avg_beta_head_grad, 5))
-        avg_rsafe_head_grad = str(round(avg_rsafe_head_grad, 5))
-        avg_mu = str(round(avg_mu, 5))
-        avg_sigma = str(round(avg_sigma, 5))
-        min_barrier = str(round(min_barrier, 5))
-        avg_barrier = str(round(avg_barrier, 5))
-        timeout_rate = str(round(timeout_rate, 5))
-        success_rate = str(round(success_rate, 5))
-        collision_rate = str(round(collision_rate, 5))
-
-        # Print logging statements
-        print(flush=True)
-        print(f"-------------------- Iteration #{i_so_far} --------------------", flush=True)
-        print(f"Average Episodic Length: {avg_ep_lens}", flush=True)
-        print(f"Average Episodic Return: {avg_ep_rews}", flush=True)
-        print(f"Average Loss: {avg_actor_loss}", flush=True)
-        print(f"Average Critic Loss: {avg_critic_loss}", flush=True)
-        print(f"Average Actor Grad Norm: {avg_actor_grad}", flush=True)
-        print(f"Average Critic Grad Norm: {avg_critic_grad}", flush=True)
-        print(f"  > Policy Grad Norm: {avg_policy_grad}", flush=True)
-        print(f"  > CBF Grad Norm: {avg_cbf_grad}", flush=True)
-        print(f"  > unom Head Grad Norm: {avg_unom_head_grad}", flush=True)
-        print(f"  > alpha Head Grad Norm: {avg_alpha_head_grad}", flush=True)
-        print(f"  > beta Head Grad Norm: {avg_beta_head_grad}", flush=True)
-        print(f"  > r_safe Head Grad Norm: {avg_rsafe_head_grad}", flush=True)
-        print(f"Average Action Mu: {avg_mu}", flush=True)
-        print(f"Average Action Sigma: {avg_sigma}", flush=True)
-        print(f"Min Barrier Value: {min_barrier}", flush=True)
-        print(f"Average Barrier Value: {avg_barrier}", flush=True)
-        print(f"Timeout Rate: {timeout_rate}", flush=True)
-        print(f"Success Rate: {success_rate}", flush=True)
-        print(f"Collision Rate: {collision_rate}", flush=True)
-        print(f"Timesteps So Far: {t_so_far}", flush=True)
-        print(f"Iteration took: {delta_t} secs", flush=True)
-        print(f"Learning rate: {lr}", flush=True)
-        print(f"------------------------------------------------------", flush=True)
-        print(flush=True)
+        eval_return = eval_metrics["mean_return"] if eval_metrics is not None else float("nan")
+        eval_success = eval_metrics["success_rate"] if eval_metrics is not None else float("nan")
+        total_updates = int(num_updates or i_so_far)
+        print(
+            f"update {i_so_far:4d}/{total_updates} | steps {t_so_far:8d} | "
+            f"eval {eval_return:8.2f} | success {eval_success:.3f} | sps {int(sps)}",
+            flush=True,
+        )
 
         # Reset batch-specific logging data
         self.logger['batch_lens'] = []
@@ -804,6 +799,9 @@ class PPO:
         self.logger['sigma_means'] = []
         self.logger['barrier_min_batch'] = []
         self.logger['barrier_avg_batch'] = []
+        self.logger['entropy_losses'] = []
+        self.logger['approx_kls'] = []
+        self.logger['clipfracs'] = []
         self.logger['n_timeout'] = 0
         self.logger['n_success'] = 0
         self.logger['n_collision'] = 0

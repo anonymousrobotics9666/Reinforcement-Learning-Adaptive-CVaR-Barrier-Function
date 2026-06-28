@@ -20,6 +20,14 @@ total_timesteps: 20000000
 save_after_timesteps: 1000000
 save_freq: 1000000
 model_folder: default
+save_dir: trained_models/${model_folder}
+overwrite: false
+
+# Run naming and W&B logging follow the diff_opt training entrypoint style.
+run_name: null
+wandb_entity: xinywa_umich
+wandb_project: diff_cvar
+wandb_interval: 10
 
 # System
 device: auto         # auto | cpu | cuda
@@ -30,7 +38,8 @@ num_envs: 8
 # Weights & Biases login in fresh open-source checkouts.
 wandb:
   enabled: true
-  project: rl_adaptive_cvar_cbf
+  project: ${wandb_project}
+  entity: ${wandb_entity}
 
 hydra:
   job:

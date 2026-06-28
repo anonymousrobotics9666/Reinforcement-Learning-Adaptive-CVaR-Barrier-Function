@@ -2,8 +2,10 @@
 # PPO algorithm hyperparameters.
 
 gamma: 0.99
-eval_freq_timesteps: 200000
-eval_episodes: 50
+eval_interval: 100
+eval_freq_timesteps: 0
+eval_episodes: 20
+max_checkpoints: 10
 
 n_updates_per_iteration: 8
 timesteps_per_batch: 8192

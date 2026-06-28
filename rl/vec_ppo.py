@@ -119,8 +119,4 @@ class VecPPO(PPO):
         self.logger['n_success'] = n_success
         self.logger['n_collision'] = n_collision
 
-        # Debug print to show actual batch size vs target
-        actual_steps = np.sum(batch_lens)
-        print(f"  [VecEnv] Collected {actual_steps} steps (Target: {self.timesteps_per_batch}). This creates larger batches and fewer iterations.", flush=True)
-
         return batch_obs, batch_acts, batch_log_probs, batch_rews, batch_lens, batch_vals, batch_dones
