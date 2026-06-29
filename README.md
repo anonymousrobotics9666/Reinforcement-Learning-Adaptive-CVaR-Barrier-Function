@@ -1,8 +1,8 @@
 # Reinforcement Learning Adaptive CVaR Barrier Function
 
-Code for **[Reinforcement Learning for Risk Adaptation via Differentiable CVaR Barrier Functions](https://arxiv.org/abs/2605.21257)**.
 
-![Crowd navigation rollout](docs/assets/demo.gif)
+
+Crowd navigation rollout
 
 The project trains PPO policies for crowd navigation with differentiable CVaR-CBF-QP safety layers.
 
@@ -64,23 +64,6 @@ outputs/social_nav_var_num/runs/<run_name>-<model>-bs<batch>-ep<epochs>-lr<lr>/
 
 Each run contains `config.yaml`, `ckpt_<step>.pt`, and `ckpt_manifest.json`.
 
-## Paper-Style Demo
-
-Example command for a slower unicycle robot with TurtleBot4-like speed, human speeds in `[0.2, 0.35]`, 15 humans, safety margin `0.2`, and longer episodes:
-
-```bash
-WANDB_MODE=offline RUN_NAME=turtlebot4_demo bash scripts/run_ppo.sh \
-  model=diff_cvar \
-  robot=unicycle \
-  robot.vmax=0.35 \
-  robot.omega_max=1.5 \
-  env.humans.vmax='[0.2,0.35]' \
-  env.humans.num_humans=15 \
-  model.actor.safety_margin=0.2 \
-  env.max_steps=1200 \
-  trainer.total_timesteps=20000000
-```
-
 ## Evaluate
 
 List checkpoints:
@@ -105,21 +88,6 @@ python scripts/eval.py \
   --save-dir outputs/social_nav_var_num/runs/<run> \
   --checkpoint outputs/social_nav_var_num/runs/<run>/ckpt_<step>.pt \
   --visualize
-```
-
-## W&B Logging
-
-Offline logging:
-
-```bash
-WANDB_MODE=offline bash scripts/run_ppo.sh
-```
-
-Online logging:
-
-```bash
-wandb login
-WANDB_ENTITY=<your_user_or_team> WANDB_PROJECT=<your_project> bash scripts/run_ppo.sh
 ```
 
 ## Repository Layout
