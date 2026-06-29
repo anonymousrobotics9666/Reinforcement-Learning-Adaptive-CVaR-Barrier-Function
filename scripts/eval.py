@@ -11,6 +11,7 @@ import imageio
 import numpy as np
 from omegaconf import OmegaConf
 import torch
+from tqdm import tqdm
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -136,7 +137,7 @@ class Evaluator:
         total_episodes = 0
 
         try:
-            for seed in FIXED_EVAL_SEEDS:
+            for seed in tqdm(FIXED_EVAL_SEEDS, desc="Evaluating"):
                 for ep in range(self.episodes_per_seed):
                     episode_seed = seed + ep
                     obs, _info = env.reset(seed=episode_seed)

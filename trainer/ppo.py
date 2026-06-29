@@ -16,6 +16,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 from torch.optim import Adam
+from tqdm import tqdm
 from crowd_sim.utils import absolute_obs_batch_to_relative, select_top_k_obs
 from model.factory import build_model
 
@@ -332,7 +333,7 @@ class PPO:
         total_episodes = 0
 
         seeds = list(range(100, 1000 + 1, 100))
-        for seed in seeds:
+        for seed in tqdm(seeds, desc="Evaluating"):
             for ep in range(episodes):
                 obs, _ = self.eval_env.reset(seed=seed + ep)
                 done = False

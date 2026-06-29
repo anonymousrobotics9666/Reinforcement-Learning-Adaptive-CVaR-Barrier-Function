@@ -8,6 +8,7 @@ dependencies:
   - matplotlib
   - cvxopt
   - pytorch
+  - tqdm
   - pip:
       - gymnasium==0.29.1
       - hydra-core==1.3.2

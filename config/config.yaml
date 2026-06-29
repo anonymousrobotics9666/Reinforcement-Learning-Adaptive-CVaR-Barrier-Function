@@ -1,7 +1,7 @@
 defaults:
   - base
   - env: social_nav_var_num
-  - robot: unicycle
+  - robot: single_integrator
   - model: ppo_base
   - trainer: ppo
   - _self_

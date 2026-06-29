@@ -67,7 +67,7 @@ Common options can be changed from the shell launcher:
 | Option           | Values / example                              |
 | ---------------- | --------------------------------------------- |
 | Model            | `MODEL=diff_cvar` or `MODEL=ppo_base`         |
-| Robot            | `ROBOT=unicycle` or `ROBOT=single_integrator` |
+| Robot            | `ROBOT=single_integrator` or `ROBOT=unicycle` |
 | Number of humans | `env.humans.num_humans=15`                    |
 
 
