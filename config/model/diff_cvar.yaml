@@ -12,6 +12,7 @@ actor:
   alpha: 2.0
   beta_min: 0.05
   beta: 0.5
+  qp_max_iter: 40
   gmm_weights: [0.6, 0.2, 0.2]
   gmm_stds: [0.1, 0.2, 0.2]
   gmm_lateral_ratio: 0.3

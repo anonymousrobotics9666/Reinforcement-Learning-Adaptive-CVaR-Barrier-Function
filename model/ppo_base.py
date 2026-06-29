@@ -22,7 +22,7 @@ class FCNet(nn.Module):
                  alpha = 2.0,
                  beta = 0.2,
                  robot_type='single_integrator',
-                 vmax = 3.0, amax = 3.0, omega_max = 3.0,
+                 vmax = 3.0, omega_max = 3.0,
                  slack_weight=10.0):
         super().__init__()
 

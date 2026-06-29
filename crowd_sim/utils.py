@@ -120,49 +120,6 @@ def select_top_k_obs(rel_obs, top_k: int):
     return arr[..., :width]
 
 
-def parse_obstacles(obs):
-    """
-    Parse obstacle blocks from observation.
-    Supports:
-    1) New format: [robot(6), K * (rel_x, rel_y, vx, vy, radius, mask)]
-    2) Legacy format: [robot(6), rel_x, rel_y, vx, vy, radius]
-    Returns:
-        rels: (N, 2), vels: (N, 2), radii: (N,), masks: (N,)
-    """
-    obs = np.asarray(obs, dtype=np.float64).reshape(-1)
-
-    # New K-obstacle format
-    if obs.size >= 12 and (obs.size - 6) % 6 == 0:
-        blocks = obs[6:].reshape(-1, 6)
-        rels = blocks[:, 0:2].astype(np.float64)
-        vels = blocks[:, 2:4].astype(np.float64)
-        radii = blocks[:, 4].astype(np.float64)
-        masks = np.clip(blocks[:, 5].astype(np.float64), 0.0, 1.0)
-        return (
-            rels,
-            vels,
-            radii,
-            masks,
-        )
-
-    # Single-obstacle format
-    if obs.size >= 11:
-        return (
-            obs[6:8].reshape(1, 2).astype(np.float64),
-            obs[8:10].reshape(1, 2).astype(np.float64),
-            np.array([float(obs[10])], dtype=np.float64),
-            np.ones((1,), dtype=np.float64),
-        )
-
-    # No obstacle info in observation
-    return (
-        np.zeros((0, 2), dtype=np.float64),
-        np.zeros((0, 2), dtype=np.float64),
-        np.zeros((0,), dtype=np.float64),
-        np.zeros((0,), dtype=np.float64),
-    )
-
-
 def sample_point_in_disk(rng, center, radius, arena_size=None, max_tries=256):
     center = np.asarray(center, dtype=float)
     for _ in range(max_tries):

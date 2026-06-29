@@ -32,7 +32,9 @@ class DiffCVaRBFQP(nn.Module):
                  alpha=2.0, 
                  beta_min=0.05,
                  beta=0.1,
-                 robot_type='single_integrator', vmax=3.0, amax=3.0, omega_max=3.0,
+                 qp_verbose=-1,
+                 qp_max_iter=40,
+                 robot_type='single_integrator', vmax=3.0, omega_max=3.0,
                  gmm_weights=None, gmm_stds=None, gmm_lateral_ratio=0.3, **kwargs):
         super().__init__()
         self.n_features = n_features
@@ -44,6 +46,10 @@ class DiffCVaRBFQP(nn.Module):
         self.beta = float(beta)
         if not (0.0 < self.beta_min < self.beta < 1.0):
             raise ValueError("DiffCVaRBFQP requires 0.0 < beta_min < beta < 1.0")
+        self.qp_verbose = int(qp_verbose)
+        self.qp_max_iter = int(qp_max_iter)
+        if self.qp_max_iter <= 0:
+            raise ValueError("DiffCVaRBFQP requires qp_max_iter > 0")
         self.robot_type = robot_type
         self.act_name = str(act)
         self.act = resolve_activation(act)
@@ -60,9 +66,6 @@ class DiffCVaRBFQP(nn.Module):
         elif self.robot_type == 'unicycle':
             self.u_min = [-vmax, -omega_max]
             self.u_max = [vmax, omega_max]
-        elif self.robot_type == 'unicycle_dynamic':
-            self.u_min = [-omega_max, -amax]
-            self.u_max = [omega_max, amax]
         else:
             self.u_min = None
             self.u_max = None
@@ -84,6 +87,12 @@ class DiffCVaRBFQP(nn.Module):
         self.fc31 = nn.Linear(control_hidden_dim, action_dim)
         self.fc32 = nn.Linear(scalar_hidden_dim, 1)
         self.fc33 = nn.Linear(scalar_hidden_dim, 1)
+
+    def _solve_qpth(self, Q, p, G, h, e):
+        return QPFunction(
+            verbose=self.qp_verbose,
+            maxIter=self.qp_max_iter,
+        )(Q, p, G, h, e, e)
 
     def _extract_obstacle_blocks(self, obs):
         """
@@ -222,7 +231,7 @@ class DiffCVaRBFQP(nn.Module):
         e_qp = torch.empty(0, device=self.fc1.weight.device, dtype=torch.float64)
 
         if self.training:
-            x = QPFunction(verbose=0, maxIter=40)(Q_qp, p_qp, G_qp, h_qp_qp, e_qp, e_qp)
+            x = self._solve_qpth(Q_qp, p_qp, G_qp, h_qp_qp, e_qp)
         else:
             if nBatch == 1:
                 x, infeas = solve_qp_cvxopt(
@@ -234,7 +243,7 @@ class DiffCVaRBFQP(nn.Module):
                 self._qp_warm_start = x.detach().cpu().numpy().reshape(-1)
                 x = self._apply_fallback(x, infeas)
             else:
-                x = QPFunction(verbose=0, maxIter=40)(Q_qp, p_qp, G_qp, h_qp_qp, e_qp, e_qp)
+                x = self._solve_qpth(Q_qp, p_qp, G_qp, h_qp_qp, e_qp)
         return x.to(dtype=obs.dtype)
 
     def _apply_fallback(self, x, infeas):
@@ -318,7 +327,7 @@ class DiffCVaRBFQP(nn.Module):
         e_qp = torch.empty(0, device=self.fc1.weight.device, dtype=torch.float64)
 
         if self.training:
-            x = QPFunction(verbose=0, maxIter=40)(Q_qp, p_qp, G_qp, h_qp_qp, e_qp, e_qp)
+            x = self._solve_qpth(Q_qp, p_qp, G_qp, h_qp_qp, e_qp)
         else:
             if nBatch == 1:
                 x, infeas = solve_qp_cvxopt(
@@ -330,5 +339,5 @@ class DiffCVaRBFQP(nn.Module):
                 self._qp_warm_start = x.detach().cpu().numpy().reshape(-1)
                 x = self._apply_fallback(x, infeas)
             else:
-                x = QPFunction(verbose=0, maxIter=40)(Q_qp, p_qp, G_qp, h_qp_qp, e_qp, e_qp)
+                x = self._solve_qpth(Q_qp, p_qp, G_qp, h_qp_qp, e_qp)
         return x.to(dtype=obs.dtype)

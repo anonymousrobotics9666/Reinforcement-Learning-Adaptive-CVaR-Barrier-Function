@@ -120,9 +120,10 @@ class Trainer:
         }
 
     def setup_wandb(self):
+        wandb_entity = str(self.cfg.wandb_entity).strip() or None
         run = wandb.init(
             project=str(self.cfg.wandb_project),
-            entity=str(self.cfg.wandb_entity),
+            entity=wandb_entity,
             name=self.run_name,
             config=self.config_dict,
         )

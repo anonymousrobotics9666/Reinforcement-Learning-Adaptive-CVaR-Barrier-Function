@@ -3,7 +3,7 @@ from gymnasium import spaces
 from matplotlib.collections import LineCollection
 from matplotlib.colors import LinearSegmentedColormap, Normalize
 import numpy as np
-from crowd_sim.env.robot.robot import SingleIntegrator, Unicycle, UnicycleDynamic
+from crowd_sim.env.robot.robot import SingleIntegrator, Unicycle
 from crowd_sim.env.robot.obstacle import SingleIntegrator as HumanIntegrator
 from crowd_nav.policy.social_force_helper import SocialForceHelper
 from crowd_sim.utils import sample_point_in_disk
@@ -42,9 +42,7 @@ class SocialNav(gym.Env):
             robot_u_max = [robot_cfg['vmax'], robot_cfg['omega_max']]
             self.robot = Unicycle(self.dt, self.robot_radius, umax=robot_u_max)
         elif self.robot_type == 'unicycle_dynamic':
-            # input is acc and omega, so robot_u_max is: [v_max, w_max, acc_max]
-            robot_u_max = [robot_cfg['vmax'],  robot_cfg['omega_max'], robot_cfg['amax']]
-            self.robot = UnicycleDynamic(self.dt, self.robot_radius, umax=robot_u_max)
+            raise NotImplementedError("unicycle_dynamic is not supported")
         else:
             raise ValueError(f"Unknown robot type: {self.robot_type}")
             

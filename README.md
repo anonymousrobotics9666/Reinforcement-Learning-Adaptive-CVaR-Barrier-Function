@@ -1,7 +1,5 @@
 # Reinforcement Learning Adaptive CVaR Barrier Function
 
-
-
 Crowd navigation rollout
 
 The project trains PPO policies for crowd navigation with differentiable CVaR-CBF-QP safety layers.
@@ -17,7 +15,7 @@ conda env create -f environment.yml
 conda activate rl-cvar-cbf
 ```
 
-For a specific CUDA build, install the matching PyTorch wheel for your machine after activating the environment. The code uses PyTorch directly; `Python-RVO2` is not required.
+For a specific CUDA build, install the matching PyTorch wheel for your machine after activating the environment. 
 
 ## Quick Start
 
@@ -64,6 +62,21 @@ outputs/social_nav_var_num/runs/<run_name>-<model>-bs<batch>-ep<epochs>-lr<lr>/
 
 Each run contains `config.yaml`, `ckpt_<step>.pt`, and `ckpt_manifest.json`.
 
+## W&B Logging
+
+For offline logging:
+
+```bash
+WANDB_MODE=offline bash scripts/run_ppo.sh
+```
+
+For online logging:  
+
+```bash
+wandb login
+WANDB_PROJECT=<project_name> WANDB_ENTITY=<user_or_team> bash scripts/run_ppo.sh
+```
+
 ## Evaluate
 
 List checkpoints:
@@ -99,3 +112,4 @@ model/       PPO and DiffCVaR-CBF-QP models
 trainer/     PPO training loop and checkpointing
 scripts/     Train, eval, and environment test entrypoints
 ```
+

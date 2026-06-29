@@ -6,7 +6,7 @@ set -euo pipefail
 # export WANDB_API_KEY="..."
 
 export WANDB_MODE="${WANDB_MODE:-online}"
-WANDB_ENTITY="${WANDB_ENTITY:-xinywa_umich}"
+WANDB_ENTITY="${WANDB_ENTITY:-}"
 WANDB_PROJECT="${WANDB_PROJECT:-diff_cvar}"
 MODEL="${MODEL:-diff_cvar}"
 ROBOT="${ROBOT:-unicycle}"

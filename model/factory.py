@@ -29,8 +29,6 @@ def _actor_kwargs(cfg):
         "vmax": cfg.robot["vmax"],
         "omega_max": cfg.robot["omega_max"],
     }
-    if cfg.robot.get("amax", None) is not None:
-        kwargs["amax"] = cfg.robot["amax"]
     if method == "vanilla_ppo":
         kwargs.update(
             {
@@ -47,6 +45,7 @@ def _actor_kwargs(cfg):
                 "scalar_hidden_dim": int(actor_cfg.get("scalar_hidden_dim", 256)),
                 "act": actor_cfg.get("act", "relu"),
                 "beta_min": float(actor_cfg.get("beta_min", 0.05)),
+                "qp_max_iter": int(actor_cfg.get("qp_max_iter", 40)),
             }
         )
 
