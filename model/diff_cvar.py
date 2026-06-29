@@ -4,7 +4,7 @@ import torch.nn.functional as F
 from qpth.qp import QPFunction
 import numpy as np
 from model.qp_solver import solve_qp_cvxopt
-from controller.traj_prediction_batch import TrajPredictorTorch as TrajPredictor
+from model.traj_prediction import TrajPredictorTorch as TrajPredictor
 
 import math
 
