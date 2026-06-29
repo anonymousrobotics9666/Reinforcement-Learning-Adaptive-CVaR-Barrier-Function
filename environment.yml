@@ -8,7 +8,6 @@ dependencies:
   - matplotlib
   - cvxopt
   - pip:
-      - torch
       - gymnasium==0.29.1
       - hydra-core==1.3.2
       - omegaconf==2.3.0
