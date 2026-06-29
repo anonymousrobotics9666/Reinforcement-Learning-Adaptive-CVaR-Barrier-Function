@@ -35,7 +35,7 @@ def get_policy_kwargs(config, method):
     if method != "diffcvarbfqp":
         return {}
 
-    gmm_cfg = dict(config.human_params.get("gmm", {}))
+    gmm_cfg = dict(config.env.humans.get("gmm", {}))
     return {
         "gmm_weights": gmm_cfg.get("weights"),
         "gmm_stds": gmm_cfg.get("stds"),

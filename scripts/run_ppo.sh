@@ -8,20 +8,20 @@ set -euo pipefail
 export WANDB_MODE="${WANDB_MODE:-online}"
 WANDB_ENTITY="${WANDB_ENTITY:-xinywa_umich}"
 WANDB_PROJECT="${WANDB_PROJECT:-diff_cvar}"
-METHOD="${METHOD:-diffcvarbfqp}"
+MODEL="${MODEL:-diff_cvar}"
 ROBOT="${ROBOT:-unicycle}"
-RUN_NAME="${RUN_NAME:-${METHOD}}"
+RUN_NAME="${RUN_NAME:-${MODEL}}"
 DEVICE="${DEVICE:-auto}"
 NUM_ENVS="${NUM_ENVS:-8}"
 
 cd "$(dirname "$0")/.."
 
 python scripts/run_ppo_base.py \
-  method="${METHOD}" \
-  "env/robot=${ROBOT}" \
+  model="${MODEL}" \
+  robot="${ROBOT}" \
   run_name="${RUN_NAME}" \
   wandb_entity="${WANDB_ENTITY}" \
   wandb_project="${WANDB_PROJECT}" \
   device="${DEVICE}" \
-  num_envs="${NUM_ENVS}" \
+  trainer.num_envs="${NUM_ENVS}" \
   "$@"

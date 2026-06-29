@@ -1,13 +1,11 @@
-# @package _global_
+name: social_nav_var_num
+dt: 0.1
+max_steps: 400
+sensing_radius: 20.0
+obs_top_k: 1
+unicycle_k_omega: 4.0
 
-env:
-  name: social_nav_var_num
-  dt: 0.1
-  max_steps: 400
-  sensing_radius: 20.0
-  obs_top_k: 1
-  unicycle_k_omega: 4.0
-human:
+humans:
   radius: 0.4
   vmax: [0.5, 1.5]
   arena_size: 6.0

@@ -1,5 +1,4 @@
 import numpy as np
-from config.config import Config
  
 
 def is_absolute_obs_dim(obs_dim: int) -> bool:
@@ -179,7 +178,7 @@ def sample_point_in_disk(rng, center, radius, arena_size=None, max_tries=256):
     return np.clip(center, -arena_size, arena_size)
 
 
-def build_env(env_name: str, render_mode: str, config: Config):
+def build_env(env_name: str, render_mode: str, config):
     from crowd_sim.env.social_nav import SocialNav
     from crowd_sim.env.social_nav_var_num import SocialNavVarNum
 
@@ -190,5 +189,5 @@ def build_env(env_name: str, render_mode: str, config: Config):
     raise ValueError(f"Unknown env: {env_name}")
 
 
-def resolve_env_name(config: Config) -> str:
+def resolve_env_name(config) -> str:
     return str(config.env.get("name", "social_nav_var_num"))

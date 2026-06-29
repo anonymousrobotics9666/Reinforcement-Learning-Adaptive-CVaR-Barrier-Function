@@ -1,4 +1,3 @@
-from config.config import Config
 from model.actor_critic import ActorCritic
 from trainer.utils import get_policy_kwargs
 
@@ -15,23 +14,22 @@ def get_model_class(method: str):
 
 
 def _actor_kwargs(cfg):
-    config = Config(cfg)
-    method = str(cfg.method)
+    method = str(cfg.model.type)
     safe_dist = (
-        config.controller_params["safety_margin"]
-        + config.human_params["radius"]
-        + config.robot_params["radius"]
+        cfg.env.controller["safety_margin"]
+        + cfg.env.humans["radius"]
+        + cfg.robot["radius"]
     )
     kwargs = {
-        "robot_type": config.robot_params["type"],
+        "robot_type": cfg.robot["type"],
         "safe_dist": safe_dist,
-        "alpha": config.controller_params["cbf_alpha"],
-        "beta": config.controller_params["cvar_beta"],
-        "vmax": config.robot_params["vmax"],
-        "amax": config.robot_params["amax"],
-        "omega_max": config.robot_params["omega_max"],
+        "alpha": cfg.env.controller["cbf_alpha"],
+        "beta": cfg.env.controller["cvar_beta"],
+        "vmax": cfg.robot["vmax"],
+        "amax": cfg.robot["amax"],
+        "omega_max": cfg.robot["omega_max"],
     }
-    kwargs.update(get_policy_kwargs(config, method))
+    kwargs.update(get_policy_kwargs(cfg, method))
     return kwargs
 
 
@@ -41,9 +39,9 @@ def build_model(config, obs_dim, act_dim, action_low=None, action_high=None):
     if action_high is None:
         action_high = [1.0] * int(act_dim)
 
-    method = str(config.method)
+    method = str(config.model.type)
     policy_class = get_model_class(method)
-    action_std_init = float(config.get("action_std_init", 0.5))
+    action_std_init = float(config.model.get("action_std_init", 0.5))
     return ActorCritic(
         policy_class=policy_class,
         obs_dim=int(obs_dim),

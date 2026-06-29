@@ -13,12 +13,12 @@ class SocialNavVarNum(SocialNav):
     def __init__(self, render_mode=None, config_file=None):
         super().__init__(render_mode=render_mode, config_file=config_file)
 
-        human_params = config_file.human_params if config_file is not None else {}
-        robot_params = config_file.robot_params if config_file is not None else {}
-        self.human_num_range = int(human_params.get("human_num_range", 0))
+        human_cfg = config_file.env.humans if config_file is not None else {}
+        robot_cfg = config_file.robot if config_file is not None else {}
+        self.human_num_range = int(human_cfg.get("human_num_range", 0))
         # Matches initialization sampling below: px_noise/py_noise in [0, human_init_noise_range).
-        self.human_init_noise_range = float(human_params.get("init_noise_range", 1.0))
-        self.robot_ini_goal_dist = float(robot_params.get("ini_goal_dist", 4.0))
+        self.human_init_noise_range = float(human_cfg.get("init_noise_range", 1.0))
+        self.robot_ini_goal_dist = float(robot_cfg.get("ini_goal_dist", 4.0))
 
     def _init_robot_humans(self, options=None):
         rng = self.np_random

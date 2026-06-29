@@ -17,7 +17,6 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from config.config import Config
 from crowd_sim.utils import absolute_obs_to_relative, build_env, resolve_env_name, select_top_k_obs
 from model.factory import build_model
 from trainer.utils import resolve_device
@@ -47,16 +46,15 @@ class Evaluator:
         self.visualize = bool(visualize)
         self.video_save_dir = None
         self.config = OmegaConf.load(self.save_dir / "config.yaml")
-        self.runtime_config = Config(self.config)
-        self.env_name = resolve_env_name(self.runtime_config)
+        self.env_name = resolve_env_name(self.config)
         self.device = resolve_device(self.config.get("device", "auto"), default="cuda")
 
-        env = build_env(self.env_name, render_mode=None, config=self.runtime_config)
+        env = build_env(self.env_name, render_mode=None, config=self.config)
         try:
             self.obs_top_k = int(
-                self.runtime_config.env_params.get(
+                self.config.env.get(
                     "obs_top_k",
-                    self.runtime_config.env_params.get("max_obstacles_obs", 1),
+                    self.config.env.get("max_obstacles_obs", 1),
                 )
             )
             self.obs_dim = 6 + self.obs_top_k * 6
@@ -74,7 +72,7 @@ class Evaluator:
             action_high=self.action_high,
         ).to(self.device)
 
-        default_episodes = int(self.config.get("eval_episodes", 20))
+        default_episodes = int(self.config.trainer.eval_episodes)
         self.episodes_per_seed = int(episodes_per_seed if episodes_per_seed is not None else default_episodes)
         if self.episodes_per_seed <= 0:
             raise ValueError("episodes_per_seed must be > 0")
@@ -117,7 +115,7 @@ class Evaluator:
         env = build_env(
             self.env_name,
             render_mode="rgb_array" if self.visualize else None,
-            config=self.runtime_config,
+            config=self.config,
         )
         returns = []
         lengths = []

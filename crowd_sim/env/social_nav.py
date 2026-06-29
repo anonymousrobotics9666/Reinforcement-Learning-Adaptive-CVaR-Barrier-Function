@@ -17,15 +17,15 @@ class SocialNav(gym.Env):
         self.render_mode = render_mode
         self.show_human_traj = False
         
-        # Load params from Config
-        env_params = config_file.env_params
-        self.dt = env_params['dt']
-        self.max_steps = env_params['max_steps']
-        self.sensing_radius = float(env_params.get('sensing_radius', 5.0))
+        # Load params directly from the composed Hydra config.
+        env_cfg = config_file.env
+        self.dt = env_cfg['dt']
+        self.max_steps = env_cfg['max_steps']
+        self.sensing_radius = float(env_cfg.get('sensing_radius', 5.0))
 
         # --- 0. Initialize Robot Model ---
-        robot_params = config_file.robot_params
-        self.robot_radius = robot_params['radius']
+        robot_cfg = config_file.robot
+        self.robot_radius = robot_cfg['radius']
         self.robot_pos = np.zeros(2)
         self.robot_vel = np.zeros(2)
         self.robot_theta = 0.0
@@ -33,29 +33,29 @@ class SocialNav(gym.Env):
         self.robot_traj = []
         self.render_safe_dist = None
 
-        self.robot_type = robot_params['type']
+        self.robot_type = robot_cfg['type']
         if self.robot_type == 'single_integrator':
-            robot_u_max = robot_params['vmax']
+            robot_u_max = robot_cfg['vmax']
             self.robot = SingleIntegrator(self.dt, self.robot_radius, umax=robot_u_max)
         elif self.robot_type == 'unicycle':
             # input is v and omega, so robot_u_max is 2 dimensions: [v_max, w_max]
-            robot_u_max = [robot_params['vmax'], robot_params['omega_max']]
+            robot_u_max = [robot_cfg['vmax'], robot_cfg['omega_max']]
             self.robot = Unicycle(self.dt, self.robot_radius, umax=robot_u_max)
         elif self.robot_type == 'unicycle_dynamic':
             # input is acc and omega, so robot_u_max is: [v_max, w_max, acc_max]
-            robot_u_max = [robot_params['vmax'],  robot_params['omega_max'], robot_params['amax']]
+            robot_u_max = [robot_cfg['vmax'],  robot_cfg['omega_max'], robot_cfg['amax']]
             self.robot = UnicycleDynamic(self.dt, self.robot_radius, umax=robot_u_max)
         else:
             raise ValueError(f"Unknown robot type: {self.robot_type}")
             
 
         # --- 1. Initialize Humans ---
-        human_params = config_file.human_params
-        self.num_humans = int(human_params.get('num_humans', 1))
+        human_cfg = config_file.env.humans
+        self.num_humans = int(human_cfg.get('num_humans', 1))
         # Frozen at init: max possible humans across episodes (accounts for var-num
         # environments where self.num_humans mutates per reset). The env always emits
         # _obs_human_cap blocks; unused slots are zero-padded with mask=0.
-        _hnr = int(human_params.get('human_num_range', 0))
+        _hnr = int(human_cfg.get('human_num_range', 0))
         self._obs_human_cap = self.num_humans + max(0, _hnr)
 
         self.human_radii = np.zeros(self.num_humans, dtype=float)  
@@ -66,29 +66,28 @@ class SocialNav(gym.Env):
         self.human_traj_steps = []
         self.human_vmaxs = np.zeros(self.num_humans, dtype=float) 
 
-        self.human_vmax_min, self.human_vmax = map(float, human_params["vmax"])
-        # self.human_radius_min, self.human_radius_max = map(float, human_params["radius"])
-        self.human_radius_min = float(human_params["radius"])
-        self.human_radius_max = float(human_params["radius"])
+        self.human_vmax_min, self.human_vmax = map(float, human_cfg["vmax"])
+        self.human_radius_min = float(human_cfg["radius"])
+        self.human_radius_max = float(human_cfg["radius"])
 
-        self.human_gmm_params = dict(human_params.get("gmm", {}))
+        self.human_gmm_params = dict(human_cfg.get("gmm", {}))
         self.humans = [
             HumanIntegrator(self.dt, gmm_params=self.human_gmm_params)
             for _ in range(self.num_humans)
         ]
     
-        self.arena_size = human_params.get('arena_size', 6.0)
+        self.arena_size = human_cfg.get('arena_size', 6.0)
         self.human_circle_radius = self.arena_size * np.sqrt(2) 
 
-        self.human_policy_name = human_params.get('policy', 'nominal')
-        self.human_use_gmm = bool(human_params.get('use_gmm', True))
-        self.random_goal_changing = bool(human_params.get('random_goal_changing', False))
-        self.goal_change_chance = float(np.clip(human_params.get('goal_change_chance', 0.0), 0.0, 1.0))
-        self.end_goal_changing = bool(human_params.get('end_goal_changing', False))
-        self.end_goal_change_chance = float(np.clip(human_params.get('end_goal_change_chance', 1.0), 0.0, 1.0))
+        self.human_policy_name = human_cfg.get('policy', 'nominal')
+        self.human_use_gmm = bool(human_cfg.get('use_gmm', True))
+        self.random_goal_changing = bool(human_cfg.get('random_goal_changing', False))
+        self.goal_change_chance = float(np.clip(human_cfg.get('goal_change_chance', 0.0), 0.0, 1.0))
+        self.end_goal_changing = bool(human_cfg.get('end_goal_changing', False))
+        self.end_goal_change_chance = float(np.clip(human_cfg.get('end_goal_change_chance', 1.0), 0.0, 1.0))
         self.current_scenario = None
 
-        self.sf_params = human_params.get('sf', {})
+        self.sf_params = human_cfg.get('sf', {})
         self.sf_helper = None
         if self.human_policy_name == 'social_force':
             self.sf_helper = SocialForceHelper(
@@ -109,18 +108,18 @@ class SocialNav(gym.Env):
 
         # --- Reward Parameters (CrowdNav++) ---
         self.current_step = 0
-        rew_params = config_file.reward_params
-        self.success_reward = rew_params['success_reward']
-        self.collision_penalty = rew_params['collision_penalty']
-        self.discomfort_dist = rew_params['discomfort_dist']
-        self.discomfort_penalty_factor = rew_params['discomfort_penalty_factor']
-        self.potential_factor = rew_params['potential_factor']
-        self.back_factor = rew_params['back_factor']
-        self.spin_factor = rew_params['spin_factor']
-        self.constant_penalty = rew_params['constant_penalty']
+        reward_cfg = config_file.env.reward
+        self.success_reward = reward_cfg['success_reward']
+        self.collision_penalty = reward_cfg['collision_penalty']
+        self.discomfort_dist = reward_cfg['discomfort_dist']
+        self.discomfort_penalty_factor = reward_cfg['discomfort_penalty_factor']
+        self.potential_factor = reward_cfg['potential_factor']
+        self.back_factor = reward_cfg['back_factor']
+        self.spin_factor = reward_cfg['spin_factor']
+        self.constant_penalty = reward_cfg['constant_penalty']
         # Optional smooth safety shaping near humans (disabled by default).
-        self.safe_shaping_weight = rew_params.get('safe_shaping_weight', 0.0)
-        self.safe_shaping_band = rew_params.get('safe_shaping_band', 0.6)
+        self.safe_shaping_weight = reward_cfg.get('safe_shaping_weight', 0.0)
+        self.safe_shaping_band = reward_cfg.get('safe_shaping_band', 0.6)
 
         self.max_abs_pot_reward = self.dt * self.robot.vmax * self.potential_factor
         # maximum absolute value of rotation penalty (only meaningful for unicycle robots)

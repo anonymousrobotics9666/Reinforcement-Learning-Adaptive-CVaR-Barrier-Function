@@ -15,15 +15,17 @@ class PPOTrainer(Trainer):
         self.model = self.build_model()
 
     def build_model(self):
-        print(f"Training with {int(self.cfg.num_envs)} vectorized environments", flush=True)
-        policy_class = get_model_class(self.cfg.method)
-        print(f"Algorithm: {self.cfg.method}, Policy: {policy_class.__name__}", flush=True)
+        num_envs = int(self.cfg.trainer.num_envs)
+        method = str(self.cfg.model.type)
+        print(f"Training with {num_envs} vectorized environments", flush=True)
+        policy_class = get_model_class(method)
+        print(f"Algorithm: {method}, Policy: {policy_class.__name__}", flush=True)
 
-        seeds = [int(self.hyperparameters["seed"]) + i for i in range(int(self.cfg.num_envs))]
+        seeds = [int(self.hyperparameters["seed"]) + i for i in range(num_envs)]
         self.train_envs.reset(seed=seeds)
         model = VecPPO(
             env=self.train_envs,
-            num_envs=int(self.cfg.num_envs),
+            num_envs=num_envs,
             **self.hyperparameters,
         )
         self.load_warm_start(model)
@@ -31,16 +33,16 @@ class PPOTrainer(Trainer):
 
     def load_warm_start(self, model):
         loaded_parts = []
-        actor_model = str(self.cfg.actor_model or "").strip()
+        checkpoint = str(self.cfg.get("checkpoint", "") or "").strip()
 
-        if actor_model:
-            if not os.path.exists(actor_model):
-                raise FileNotFoundError(f"Model checkpoint not found: {actor_model}")
-            state = torch.load(actor_model, map_location=self.device, weights_only=False)
+        if checkpoint:
+            if not os.path.exists(checkpoint):
+                raise FileNotFoundError(f"Model checkpoint not found: {checkpoint}")
+            state = torch.load(checkpoint, map_location=self.device, weights_only=False)
             if not (isinstance(state, dict) and "model" in state):
-                raise ValueError(f"Expected checkpoint with a top-level 'model' key: {actor_model}")
+                raise ValueError(f"Expected checkpoint with a top-level 'model' key: {checkpoint}")
             model.model.load_state_dict(state["model"], strict=True)
-            loaded_parts.append(f"model={actor_model}")
+            loaded_parts.append(f"model={checkpoint}")
 
         if loaded_parts:
             print(f"Warm start loaded: {', '.join(loaded_parts)}", flush=True)
@@ -49,6 +51,6 @@ class PPOTrainer(Trainer):
 
     def train(self):
         try:
-            self.model.learn(total_timesteps=self.cfg.total_timesteps)
+            self.model.learn(total_timesteps=int(self.cfg.trainer.total_timesteps))
         finally:
             self.close()

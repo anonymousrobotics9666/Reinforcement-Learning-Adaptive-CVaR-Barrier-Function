@@ -2,12 +2,12 @@
 
 import os
 import shutil
+from datetime import datetime
 
 import wandb
 from gymnasium.vector import AsyncVectorEnv
 from omegaconf import OmegaConf
 
-from config.config import Config
 from crowd_sim.utils import build_env, resolve_env_name
 from trainer.utils import get_policy_kwargs, resolve_device, set_global_seeds
 
@@ -16,7 +16,7 @@ class Trainer:
     def __init__(self, cfg):
         self.cfg = cfg
         self.config_dict = OmegaConf.to_container(cfg, resolve=True)
-        self.config = Config(cfg)
+        self.config = cfg
         self.device = resolve_device(cfg.device, default="cuda")
         self.env_name = resolve_env_name(self.config)
         self.train_envs = None
@@ -33,15 +33,20 @@ class Trainer:
         self.setup_wandb()
 
     def build_run_name(self):
+        trainer_cfg = self.cfg.trainer
+        method = str(self.cfg.model.type)
+        run_prefix = str(self.cfg.run_name) if self.cfg.run_name is not None and str(self.cfg.run_name) else None
+        if run_prefix is None:
+            run_prefix = datetime.now().strftime("%Y%m%d_%H%M%S")
         if self.cfg.run_name is not None and str(self.cfg.run_name):
-            return (
-                f"{self.cfg.run_name}-{self.cfg.method}"
-                f"-bs{int(self.cfg.timesteps_per_batch)}"
-                f"-ep{int(self.cfg.n_updates_per_iteration)}"
-                f"-lr{float(self.cfg.lr):.1e}"
-                + (f"-ent{self.cfg.ent_coef}" if float(self.cfg.ent_coef) > 0.0 else "")
-            )
-        raise ValueError("run_name must be set")
+            run_prefix = str(self.cfg.run_name)
+        return (
+            f"{run_prefix}-{method}"
+            f"-bs{int(trainer_cfg.timesteps_per_batch)}"
+            f"-ep{int(trainer_cfg.n_updates_per_iteration)}"
+            f"-lr{float(trainer_cfg.lr):.1e}"
+            + (f"-ent{trainer_cfg.ent_coef}" if float(trainer_cfg.ent_coef) > 0.0 else "")
+        )
 
     def train_root(self):
         return str(self.cfg.save_dir)
@@ -56,46 +61,48 @@ class Trainer:
         return save_dir
 
     def build_hyperparameters(self):
+        trainer_cfg = self.cfg.trainer
+        method = str(self.cfg.model.type)
         safe_dist = (
-            self.config.controller_params["safety_margin"]
-            + self.config.human_params["radius"]
-            + self.config.robot_params["radius"]
+            self.cfg.env.controller["safety_margin"]
+            + self.cfg.env.humans["radius"]
+            + self.cfg.robot["radius"]
         )
         return {
             "model_config": self.cfg,
-            "max_timesteps_per_episode": self.config.env.max_steps,
+            "max_timesteps_per_episode": self.cfg.env.max_steps,
             "env_name": self.env_name,
             "seed": self.cfg.seed,
             "save_dir": self.save_dir,
             "device": self.device,
             "safe_dist": safe_dist,
-            "alpha": self.config.controller_params["cbf_alpha"],
-            "beta": self.config.controller_params["cvar_beta"],
-            "cbf_alpha": self.config.controller_params["cbf_alpha"],
-            "cvar_beta": self.config.controller_params["cvar_beta"],
-            "robot_type": self.config.robot_params["type"],
-            "vmax": self.config.robot_params["vmax"],
-            "amax": self.config.robot_params["amax"],
-            "omega_max": self.config.robot_params["omega_max"],
+            "alpha": self.cfg.env.controller["cbf_alpha"],
+            "beta": self.cfg.env.controller["cvar_beta"],
+            "cbf_alpha": self.cfg.env.controller["cbf_alpha"],
+            "cvar_beta": self.cfg.env.controller["cvar_beta"],
+            "robot_type": self.cfg.robot["type"],
+            "vmax": self.cfg.robot["vmax"],
+            "amax": self.cfg.robot["amax"],
+            "omega_max": self.cfg.robot["omega_max"],
             "obs_top_k": int(
-                self.config.env_params.get("obs_top_k", self.config.env_params.get("max_obstacles_obs", 1))
+                self.cfg.env.get("obs_top_k", self.cfg.env.get("max_obstacles_obs", 1))
             ),
-            "policy_kwargs": get_policy_kwargs(self.config, self.cfg.method),
-            "n_updates_per_iteration": self.cfg.n_updates_per_iteration,
-            "timesteps_per_batch": self.cfg.timesteps_per_batch,
-            "num_minibatches": self.cfg.num_minibatches,
-            "clip": self.cfg.clip,
-            "lr": self.cfg.lr,
-            "gamma": self.cfg.gamma,
-            "lam": self.cfg.lam,
-            "ent_coef": self.cfg.ent_coef,
-            "target_kl": self.cfg.target_kl,
-            "max_grad_norm": self.cfg.max_grad_norm,
-            "action_std_init": self.cfg.action_std_init,
-            "eval_interval": self.cfg.eval_interval,
-            "eval_freq_timesteps": self.cfg.eval_freq_timesteps,
-            "eval_episodes": self.cfg.eval_episodes,
-            "max_checkpoints": self.cfg.max_checkpoints,
+            "policy_kwargs": get_policy_kwargs(self.cfg, method),
+            "n_updates_per_iteration": trainer_cfg.n_updates_per_iteration,
+            "timesteps_per_batch": trainer_cfg.timesteps_per_batch,
+            "num_minibatches": trainer_cfg.num_minibatches,
+            "clip": trainer_cfg.clip,
+            "lr": trainer_cfg.lr,
+            "gamma": trainer_cfg.gamma,
+            "lam": trainer_cfg.lam,
+            "ent_coef": trainer_cfg.ent_coef,
+            "target_kl": trainer_cfg.target_kl,
+            "max_grad_norm": trainer_cfg.max_grad_norm,
+            "action_std_init": self.cfg.model.action_std_init,
+            "eval_interval": trainer_cfg.eval_interval,
+            "eval_freq_timesteps": trainer_cfg.eval_freq_timesteps,
+            "eval_episodes": trainer_cfg.eval_episodes,
+            "max_checkpoints": trainer_cfg.max_checkpoints,
             "wandb_interval": self.cfg.wandb_interval,
         }
 
@@ -123,11 +130,12 @@ class Trainer:
         return _init
 
     def setup_env(self):
-        num_envs = int(self.cfg.num_envs)
+        trainer_cfg = self.cfg.trainer
+        num_envs = int(trainer_cfg.num_envs)
         if num_envs <= 0:
-            raise ValueError("num_envs must be > 0")
+            raise ValueError("trainer.num_envs must be > 0")
         self.train_envs = AsyncVectorEnv([self.make_env_fn(i) for i in range(num_envs)])
-        if self.cfg.eval_interval > 0 or self.cfg.eval_freq_timesteps > 0:
+        if trainer_cfg.eval_interval > 0 or trainer_cfg.eval_freq_timesteps > 0:
             self.eval_env = build_env(self.env_name, render_mode=None, config=self.config)
             self.hyperparameters["eval_env"] = self.eval_env
 

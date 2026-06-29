@@ -1,0 +1,2 @@
+type: vanilla_ppo
+action_std_init: 0.5

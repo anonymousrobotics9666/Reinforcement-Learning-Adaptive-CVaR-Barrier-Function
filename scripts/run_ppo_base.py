@@ -14,7 +14,7 @@ if str(REPO_ROOT) not in sys.path:
 from trainer.ppo_trainer import PPOTrainer
 
 
-@hydra.main(version_base=None, config_path=str(REPO_ROOT / "config"), config_name="trainer/train")
+@hydra.main(version_base=None, config_path=str(REPO_ROOT / "config"), config_name="config")
 def main(cfg: DictConfig):
     trainer = PPOTrainer(cfg)
     trainer.train()
@@ -22,4 +22,3 @@ def main(cfg: DictConfig):
 
 if __name__ == "__main__":
     main()
-
