@@ -27,9 +27,10 @@ def _actor_kwargs(cfg):
         "alpha": float(actor_cfg.get("alpha", 2.0)),
         "beta": float(actor_cfg.get("beta", 0.5)),
         "vmax": cfg.robot["vmax"],
-        "amax": cfg.robot["amax"],
         "omega_max": cfg.robot["omega_max"],
     }
+    if cfg.robot.get("amax", None) is not None:
+        kwargs["amax"] = cfg.robot["amax"]
     if method == "vanilla_ppo":
         kwargs.update(
             {

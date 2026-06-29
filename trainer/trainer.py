@@ -96,7 +96,6 @@ class Trainer:
             "beta": beta,
             "robot_type": self.cfg.robot["type"],
             "vmax": self.cfg.robot["vmax"],
-            "amax": self.cfg.robot["amax"],
             "omega_max": self.cfg.robot["omega_max"],
             "obs_top_k": int(
                 self.cfg.env.get("obs_top_k", self.cfg.env.get("max_obstacles_obs", 1))

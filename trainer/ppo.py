@@ -669,7 +669,6 @@ class PPO:
         self.robot_type = 'single_integrator'           # Default robot type
         self.vmax = 2.0                                   # Default max control input
         self.omega_max = 3.0                             # Default max angular velocity for unicycle
-        self.amax = 3.0                                   # Default max acceleration for double integrator
         self.obs_top_k = 1                               # Network input attends to first K humans (sorted nearest-first)
 
         for param, val in hyperparameters.items():

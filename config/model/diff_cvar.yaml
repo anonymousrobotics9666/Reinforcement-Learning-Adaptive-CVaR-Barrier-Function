@@ -8,7 +8,7 @@ actor:
   scalar_hidden_dim: 256
   act: relu
   action_std_init: 0.5
-  safety_margin: 0.0
+  safety_margin: 0.05
   alpha: 2.0
   beta_min: 0.05
   beta: 0.5
