@@ -16,7 +16,7 @@ NUM_ENVS="${NUM_ENVS:-8}"
 
 cd "$(dirname "$0")/.."
 
-python scripts/run_ppo_base.py \
+python scripts/run.py \
   model="${MODEL}" \
   robot="${ROBOT}" \
   run_name="${RUN_NAME}" \

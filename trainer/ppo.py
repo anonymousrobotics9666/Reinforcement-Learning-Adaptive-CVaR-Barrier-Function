@@ -20,6 +20,33 @@ from tqdm import tqdm
 from crowd_sim.utils import absolute_obs_batch_to_relative, select_top_k_obs
 from model.factory import build_model
 
+
+def _safe_scalar(value, default=np.nan):
+    if value is None:
+        return default
+    if isinstance(value, (list, tuple)) and len(value) > 0:
+        value = value[0]
+    if torch.is_tensor(value):
+        value = value.detach().cpu().numpy()
+    if isinstance(value, np.ndarray):
+        if value.size == 0:
+            return default
+        value = value.flatten()[0]
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _set_render_safe_distance(env, actor):
+    base_env = env.unwrapped if hasattr(env, "unwrapped") else env
+    if base_env is None:
+        return
+
+    safe_dist = _safe_scalar(getattr(actor, "last_r_safe", None))
+    base_env.render_safe_dist = float(safe_dist) if np.isfinite(safe_dist) else None
+
+
 class PPO:
     """
         PPO optimizer and rollout implementation.
@@ -456,10 +483,6 @@ class PPO:
 
             # Run an episode for a maximum of max_timesteps_per_episode timesteps
             for ep_t in range(self.max_timesteps_per_episode):
-                # If render is specified, render the environment
-                if self.render and len(batch_lens) == 0:
-                    self.env.render()
-
                 t += 1 # Increment timesteps ran this batch so far
 
                 # Track observations in this batch
@@ -469,6 +492,10 @@ class PPO:
                 # Calculate action and make a step in the env. 
                 # Note that rew is short for reward.
                 action, log_prob = self.get_action(obs)
+                if self.render and len(batch_lens) == 0:
+                    _set_render_safe_distance(self.env, self.actor)
+                    self.env.render()
+
                 obs_tensor = torch.tensor(obs_rel, dtype=torch.float).to(self.device)
                 val = self.critic(obs_tensor)
 

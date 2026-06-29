@@ -44,6 +44,32 @@ def render_step(env, frames):
         env.render()
 
 
+def _safe_scalar(value, default=np.nan):
+    if value is None:
+        return default
+    if isinstance(value, (list, tuple)) and len(value) > 0:
+        value = value[0]
+    if torch.is_tensor(value):
+        value = value.detach().cpu().numpy()
+    if isinstance(value, np.ndarray):
+        if value.size == 0:
+            return default
+        value = value.flatten()[0]
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def set_render_safe_distance(env, actor):
+    base_env = env.unwrapped if hasattr(env, "unwrapped") else env
+    if base_env is None:
+        return
+
+    safe_dist = _safe_scalar(getattr(actor, "last_r_safe", None))
+    base_env.render_safe_dist = float(safe_dist) if np.isfinite(safe_dist) else None
+
+
 class Evaluator:
     def __init__(self, save_dir, episodes_per_seed=None, visualize=False):
         self.save_dir = Path(save_dir)
@@ -153,6 +179,7 @@ class Evaluator:
                         obs_t = torch.tensor(policy_obs, dtype=torch.float32, device=self.device).unsqueeze(0)
                         with torch.no_grad():
                             policy_action = self.model.get_action_deterministic(obs_t)
+                            set_render_safe_distance(env, self.model.actor)
                             action = self.model.policy_action_to_env_action(obs_t, policy_action)
                             action = action.detach().cpu().numpy().astype(np.float32).squeeze(0)
 
