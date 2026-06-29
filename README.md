@@ -1,8 +1,14 @@
 # Reinforcement Learning Adaptive CVaR Barrier Function
 
-Crowd navigation rollout
+Crowd navigation scneario
 
-The project trains PPO policies for crowd navigation with differentiable CVaR-CBF-QP safety layers.
+High-density out-of-distribution comparison (2× speed). 
+
+
+|                |                                |                        |                    |
+| -------------- | ------------------------------ | ---------------------- | ------------------ |
+| RL — collision | RL + Safety Filter — collision | CVaR-BF-QP — collision | **Ours — success** |
+
 
 ## Install
 
@@ -15,7 +21,7 @@ conda env create -f environment.yml
 conda activate rl-cvar-cbf
 ```
 
-For a specific CUDA build, install the matching PyTorch wheel for your machine after activating the environment. 
+For a CUDA build, install the matching PyTorch wheel for your machine after activating the environment. 
 
 ## Quick Start
 
@@ -39,15 +45,6 @@ Default DiffCVaR-CBF-QP training:
 bash scripts/run_ppo.sh
 ```
 
-Useful short debug run:
-
-```bash
-WANDB_MODE=offline RUN_NAME=debug bash scripts/run_ppo.sh \
-  trainer.total_timesteps=100000 \
-  trainer.num_envs=4 \
-  trainer.eval_interval=1
-```
-
 Train the vanilla PPO baseline:
 
 ```bash
@@ -61,6 +58,27 @@ outputs/social_nav_var_num/runs/<run_name>-<model>-bs<batch>-ep<epochs>-lr<lr>/
 ```
 
 Each run contains `config.yaml`, `ckpt_<step>.pt`, and `ckpt_manifest.json`.
+
+## Common Overrides
+
+Common options can be changed from the shell launcher:
+
+
+| Option           | Values / example                              |
+| ---------------- | --------------------------------------------- |
+| Model            | `MODEL=diff_cvar` or `MODEL=ppo_base`         |
+| Robot            | `ROBOT=unicycle` or `ROBOT=single_integrator` |
+| Number of humans | `env.humans.num_humans=15`                    |
+
+
+Example:
+
+```bash
+MODEL=diff_cvar ROBOT=single_integrator RUN_NAME=demo bash scripts/run_ppo.sh \
+  env.humans.num_humans=15
+```
+
+For all other parameters, see the YAML files under `config/`.
 
 ## W&B Logging
 
