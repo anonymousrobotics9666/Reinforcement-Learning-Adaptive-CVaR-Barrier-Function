@@ -13,14 +13,12 @@ The current codebase is organized around two entrypoints:
 
 ```text
 config/       Hydra configs and the Config adapter
-controller/   Batched trajectory prediction helper used by DiffCVaR-CBF
-crowd_nav/    Policy helpers and RL policy factory
+crowd_nav/    Social-force policy helpers
 crowd_sim/    Gymnasium navigation environments
-model/        Actor-critic wrapper and model factory
-rl/           PPO algorithm and policy networks
+model/        PPO policy networks, DiffCVaR-CBF-QP model, QP solver, trajectory predictor, and model factory
 scripts/      Runnable training scripts
 test/         Smoke tests; generated artifacts are ignored
-trainer/      Training framework, W&B setup, environments, and run lifecycle
+trainer/      PPO algorithm, vectorized PPO, W&B setup, environments, and run lifecycle
 ```
 
 ## Installation
@@ -57,13 +55,13 @@ Main config files:
 Override config values on the command line with Hydra syntax:
 
 ```bash
-python scripts/run_ppo_base.py method=diffcvarbfqp total_timesteps=1000000
+python scripts/run_ppo_base.py run_name=diffcvarbfqp method=diffcvarbfqp total_timesteps=1000000
 ```
 
 Use a different robot preset:
 
 ```bash
-python scripts/run_ppo_base.py method=diffcvarbfqp env/robot=unicycle
+python scripts/run_ppo_base.py run_name=diffcvarbfqp method=diffcvarbfqp env/robot=unicycle
 ```
 
 ## Observation Pipeline
@@ -108,37 +106,49 @@ diffcvarbfqp
 Train a vanilla PPO MLP policy:
 
 ```bash
-python scripts/run_ppo_base.py method=vanilla_ppo
+python scripts/run_ppo_base.py run_name=vanilla_ppo method=vanilla_ppo
 ```
 
 Train the differentiable CVaR-BF-QP policy:
 
 ```bash
-python scripts/run_ppo_base.py method=diffcvarbfqp
+python scripts/run_ppo_base.py run_name=diffcvarbfqp method=diffcvarbfqp
+```
+
+Or use the shell launcher:
+
+```bash
+bash scripts/run_ppo.sh
+```
+
+The launcher defaults to `METHOD=diffcvarbfqp`, `ROBOT=unicycle`, and forwards extra Hydra overrides:
+
+```bash
+WANDB_MODE=offline RUN_NAME=debug bash scripts/run_ppo.sh total_timesteps=100000
 ```
 
 Weights & Biases logging follows the `diff_opt` defaults:
 
 ```bash
 wandb login
-python scripts/run_ppo_base.py method=diffcvarbfqp wandb_entity=xinywa_umich wandb_project=diff_cvar
+python scripts/run_ppo_base.py run_name=diffcvarbfqp method=diffcvarbfqp wandb_entity=xinywa_umich wandb_project=diff_cvar
 ```
 
 Short debug run:
 
 ```bash
 python scripts/run_ppo_base.py \
+  run_name=debug \
   method=diffcvarbfqp \
   num_envs=4 \
   total_timesteps=200000 \
-  eval_interval=1 \
-  model_folder=debug
+  eval_interval=1
 ```
 
 Training outputs are written to:
 
 ```text
-trained_models/<model_folder>/<timestamp>_<robot>_<method>_seed<seed>/
+outputs/<env.name>/runs/<run_name>-<method>-bs<timesteps_per_batch>-ep<n_updates_per_iteration>-lr<lr>-ent<ent_coef>/
 ```
 
 The run folder contains `config.yaml`, `ckpt_<step>.pt` checkpoints, and `ckpt_manifest.json`.
@@ -158,45 +168,45 @@ Smoke-test artifacts are written under `test/smoke/`, which is ignored by git.
 Find a saved run and checkpoint:
 
 ```bash
-ls trained_models/default
-ls trained_models/default/<run>/ckpt_*.pt
+ls outputs/social_nav_var_num/runs
+ls outputs/social_nav_var_num/runs/<run>/ckpt_*.pt
 ```
 
 Evaluate all checkpoints:
 
 ```bash
 python scripts/eval.py \
-  --save-dir trained_models/default/<run>
+  --save-dir outputs/social_nav_var_num/runs/<run>
 ```
 
 Evaluate one checkpoint:
 
 ```bash
 python scripts/eval.py \
-  --save-dir trained_models/default/<run> \
-  --checkpoint trained_models/default/<run>/ckpt_<step>.pt
+  --save-dir outputs/social_nav_var_num/runs/<run> \
+  --checkpoint outputs/social_nav_var_num/runs/<run>/ckpt_<step>.pt
 ```
 
 Save rollout GIFs during eval:
 
 ```bash
 python scripts/eval.py \
-  --save-dir trained_models/default/<run> \
-  --checkpoint trained_models/default/<run>/ckpt_<step>.pt \
+  --save-dir outputs/social_nav_var_num/runs/<run> \
+  --checkpoint outputs/social_nav_var_num/runs/<run>/ckpt_<step>.pt \
   --visualize
 ```
 
 Eval writes `eval_results.json` in the run directory. Videos are saved under:
 
 ```text
-trained_models/default/<run>/visualize_<checkpoint_name>/
+outputs/social_nav_var_num/runs/<run>/visualize_<checkpoint_name>/
 ```
 
 ## Outputs
 
 | Command | Output |
 | --- | --- |
-| `scripts/run_ppo_base.py` | `trained_models/<model_folder>/<run>/config.yaml`, `ckpt_<step>.pt`, `ckpt_manifest.json` |
+| `scripts/run_ppo_base.py` | `outputs/<env.name>/runs/<run>/config.yaml`, `ckpt_<step>.pt`, `ckpt_manifest.json` |
 | `scripts/eval.py` | `eval_results.json`, optional `visualize_<checkpoint_name>/` GIFs |
 
 ## Notes

@@ -16,8 +16,7 @@ actor_model: ""
 total_timesteps: 20000000
 
 # Checkpointing
-model_folder: default
-save_dir: trained_models/${model_folder}
+save_dir: outputs/social_nav_var_num/runs
 overwrite: false
 
 # Run naming and W&B logging follow the diff_opt training entrypoint style.

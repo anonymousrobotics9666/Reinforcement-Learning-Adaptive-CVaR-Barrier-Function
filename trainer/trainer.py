@@ -2,7 +2,6 @@
 
 import os
 import shutil
-from datetime import datetime
 
 import wandb
 from gymnasium.vector import AsyncVectorEnv
@@ -11,13 +10,6 @@ from omegaconf import OmegaConf
 from config.config import Config
 from crowd_sim.utils import build_env, resolve_env_name
 from trainer.utils import get_policy_kwargs, resolve_device, set_global_seeds
-
-
-ROBOT_SHORT = {
-    "single_integrator": "si",
-    "unicycle": "uni",
-    "unicycle_dynamic": "unid",
-}
 
 
 class Trainer:
@@ -49,30 +41,10 @@ class Trainer:
                 f"-lr{float(self.cfg.lr):.1e}"
                 + (f"-ent{self.cfg.ent_coef}" if float(self.cfg.ent_coef) > 0.0 else "")
             )
-
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        robot_short = ROBOT_SHORT.get(self.config.robot_params["type"], self.config.robot_params["type"])
-        name = f"{timestamp}_{robot_short}_{self.cfg.method}_seed{int(self.cfg.seed)}"
-        if int(self.cfg.total_timesteps) != 20_000_000:
-            name += f"_steps{int(self.cfg.total_timesteps) // 1_000_000}M"
-        if abs(float(self.cfg.lr) - 1e-4) > 1e-9:
-            lr_str = f"{float(self.cfg.lr):.0e}".replace("e-0", "e-").replace("e+0", "e")
-            name += f"_lr{lr_str}"
-        if int(self.config.human.num_humans) != 20:
-            name += f"_humans{int(self.config.human.num_humans)}"
-        return self.ensure_unique_run_name(self.train_root(), name)
+        raise ValueError("run_name must be set")
 
     def train_root(self):
-        return str(self.cfg.get("save_dir") or os.path.join("trained_models", self.cfg.model_folder))
-
-    @staticmethod
-    def ensure_unique_run_name(base_root, run_name):
-        candidate = run_name
-        idx = 1
-        while os.path.exists(os.path.join(base_root, candidate)):
-            candidate = f"{run_name}_{idx}"
-            idx += 1
-        return candidate
+        return str(self.cfg.save_dir)
 
     def prepare_save_dir(self):
         save_dir = os.path.join(self.train_root(), self.run_name)
