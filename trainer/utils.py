@@ -32,12 +32,15 @@ def resolve_device(requested, default="cuda"):
 
 def get_policy_kwargs(config, method):
     method = str(method or "").strip().lower()
-    if method != "diffcvarbfqp":
+    if method != "diff_cvar":
         return {}
 
+    actor_cfg = config.model.get("actor", {}) or {}
     gmm_cfg = dict(config.env.humans.get("gmm", {}))
     return {
-        "gmm_weights": gmm_cfg.get("weights"),
-        "gmm_stds": gmm_cfg.get("stds"),
-        "gmm_lateral_ratio": gmm_cfg.get("lateral_ratio", 0.3),
+        "gmm_weights": actor_cfg.get("gmm_weights", gmm_cfg.get("weights")),
+        "gmm_stds": actor_cfg.get("gmm_stds", gmm_cfg.get("stds")),
+        "gmm_lateral_ratio": actor_cfg.get(
+            "gmm_lateral_ratio", gmm_cfg.get("lateral_ratio", 0.3)
+        ),
     }

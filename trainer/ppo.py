@@ -43,17 +43,21 @@ class PPO:
         # Extract environment information
         self.env = env
         if hasattr(env, 'single_observation_space'):
-            self.act_dim = env.single_action_space.shape[0]
             act_space = env.single_action_space
         else:
-            self.act_dim = env.action_space.shape[0]
             act_space = env.action_space
-        # Network input width is decoupled from env obs width: the env emits all
-        # num_humans blocks, the network attends to the first obs_top_k.
-        self.obs_dim = 6 + int(self.obs_top_k) * 6
 
         if getattr(self, "model_config", None) is None:
             raise ValueError("PPO requires model_config to build the train/eval model")
+        self.obs_dim = int(self.model_config.model.obs_dim)
+        self.act_dim = int(self.model_config.model.act_dim)
+        env_act_dim = int(act_space.shape[0])
+        if self.obs_dim != 6 + int(self.obs_top_k) * 6:
+            raise ValueError("model.obs_dim must equal 6 + obs_top_k * 6")
+        if env_act_dim != int(self.model_config.env.act_dim):
+            raise ValueError("env.act_dim does not match env action space")
+        if self.act_dim != env_act_dim:
+            raise ValueError("model.act_dim must match env action space")
 
         self.model = build_model(
             self.model_config,

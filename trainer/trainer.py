@@ -12,6 +12,15 @@ from crowd_sim.utils import build_env, resolve_env_name
 from trainer.utils import get_policy_kwargs, resolve_device, set_global_seeds
 
 
+def _action_std_init(cfg):
+    actor_cfg = cfg.model.get("actor", {}) or {}
+    return float(actor_cfg.get("action_std_init", cfg.model.get("action_std_init", 0.5)))
+
+
+def _actor_cfg(cfg):
+    return cfg.model.get("actor", {}) or {}
+
+
 class Trainer:
     def __init__(self, cfg):
         self.cfg = cfg
@@ -63,8 +72,13 @@ class Trainer:
     def build_hyperparameters(self):
         trainer_cfg = self.cfg.trainer
         method = str(self.cfg.model.type)
+        actor_cfg = _actor_cfg(self.cfg)
+        safety_margin = float(actor_cfg.get("safety_margin", 0.0))
+        alpha = float(actor_cfg.get("alpha", 2.0))
+        beta_min = float(actor_cfg.get("beta_min", 0.05))
+        beta = float(actor_cfg.get("beta", 0.5))
         safe_dist = (
-            self.cfg.env.controller["safety_margin"]
+            safety_margin
             + self.cfg.env.humans["radius"]
             + self.cfg.robot["radius"]
         )
@@ -76,10 +90,10 @@ class Trainer:
             "save_dir": self.save_dir,
             "device": self.device,
             "safe_dist": safe_dist,
-            "alpha": self.cfg.env.controller["cbf_alpha"],
-            "beta": self.cfg.env.controller["cvar_beta"],
-            "cbf_alpha": self.cfg.env.controller["cbf_alpha"],
-            "cvar_beta": self.cfg.env.controller["cvar_beta"],
+            "safety_margin": safety_margin,
+            "alpha": alpha,
+            "beta_min": beta_min,
+            "beta": beta,
             "robot_type": self.cfg.robot["type"],
             "vmax": self.cfg.robot["vmax"],
             "amax": self.cfg.robot["amax"],
@@ -98,7 +112,7 @@ class Trainer:
             "ent_coef": trainer_cfg.ent_coef,
             "target_kl": trainer_cfg.target_kl,
             "max_grad_norm": trainer_cfg.max_grad_norm,
-            "action_std_init": self.cfg.model.action_std_init,
+            "action_std_init": _action_std_init(self.cfg),
             "eval_interval": trainer_cfg.eval_interval,
             "eval_freq_timesteps": trainer_cfg.eval_freq_timesteps,
             "eval_episodes": trainer_cfg.eval_episodes,

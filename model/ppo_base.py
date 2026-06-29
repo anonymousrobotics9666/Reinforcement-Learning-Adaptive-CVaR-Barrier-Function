@@ -4,12 +4,20 @@ import torch.nn.functional as F
 import numpy as np
 
 
+def resolve_activation(act):
+    act = str(act or "relu").strip().lower()
+    if act == "relu":
+        return F.relu
+    raise ValueError(f"Unsupported activation: {act}")
+
+
 class FCNet(nn.Module):
     def __init__(self, 
                  n_features,
                  output_dim,
                  hidden_dim = 256,
                  hidden_dim2 = 256,
+                 act = "relu",
                  safe_dist = 0.8,
                  alpha = 2.0,
                  beta = 0.2,
@@ -23,6 +31,8 @@ class FCNet(nn.Module):
         self.hidden_dim2 = hidden_dim2
         self.output_dim = output_dim
         self.safe_dist = safe_dist
+        self.act_name = str(act)
+        self.act = resolve_activation(act)
 
 
         self.fc1 = nn.Linear(n_features, hidden_dim)
@@ -44,8 +54,8 @@ class FCNet(nn.Module):
 
         obs = obs.reshape(obs.size(0), -1)
 
-        x = F.relu(self.fc1(obs))
-        x21 = F.relu(self.fc21(x))
+        x = self.act(self.fc1(obs))
+        x21 = self.act(self.fc21(x))
         x31 = self.fc31(x21)
         
         return x31

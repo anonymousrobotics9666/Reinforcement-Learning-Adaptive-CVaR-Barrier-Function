@@ -25,6 +25,9 @@ from trainer.utils import resolve_device
 FIXED_EVAL_SEEDS = list(range(100, 1000 + 1, 100))
 
 
+OmegaConf.register_new_resolver("math", lambda expr: eval(str(expr)), replace=True)
+
+
 def policy_obs_from_env_obs(obs, obs_top_k):
     return select_top_k_obs(absolute_obs_to_relative(obs), obs_top_k)
 
@@ -57,8 +60,15 @@ class Evaluator:
                     self.config.env.get("max_obstacles_obs", 1),
                 )
             )
-            self.obs_dim = 6 + self.obs_top_k * 6
-            self.act_dim = int(env.action_space.shape[0])
+            self.obs_dim = int(self.config.model.obs_dim)
+            self.act_dim = int(self.config.model.act_dim)
+            env_act_dim = int(env.action_space.shape[0])
+            if self.obs_dim != 6 + self.obs_top_k * 6:
+                raise ValueError("model.obs_dim must equal 6 + env.obs_top_k * 6")
+            if env_act_dim != int(self.config.env.act_dim):
+                raise ValueError("env.act_dim does not match env.action_space")
+            if self.act_dim != env_act_dim:
+                raise ValueError("model.act_dim must match env.action_space")
             self.action_low = env.action_space.low.astype(np.float32)
             self.action_high = env.action_space.high.astype(np.float32)
         finally:

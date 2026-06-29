@@ -1,8 +1,8 @@
 import torch.nn as nn
 import torch
-import torch.nn.functional as F
 from qpth.qp import QPFunction
 import numpy as np
+from model.ppo_base import resolve_activation
 from model.qp_solver import solve_qp_cvxopt
 from model.traj_prediction import TrajPredictorTorch as TrajPredictor
 
@@ -27,8 +27,10 @@ class DiffCVaRBFQP(nn.Module):
                  hidden_dim=256,
                  control_hidden_dim=256,
                  scalar_hidden_dim=256,
+                 act="relu",
                  safe_dist=0.8, 
                  alpha=2.0, 
+                 beta_min=0.05,
                  beta=0.1,
                  robot_type='single_integrator', vmax=3.0, amax=3.0, omega_max=3.0,
                  gmm_weights=None, gmm_stds=None, gmm_lateral_ratio=0.3, **kwargs):
@@ -38,8 +40,13 @@ class DiffCVaRBFQP(nn.Module):
 
         self.safe_dist = safe_dist
         self.alpha = alpha   
-        self.beta = beta
+        self.beta_min = float(beta_min)
+        self.beta = float(beta)
+        if not (0.0 < self.beta_min < self.beta < 1.0):
+            raise ValueError("DiffCVaRBFQP requires 0.0 < beta_min < beta < 1.0")
         self.robot_type = robot_type
+        self.act_name = str(act)
+        self.act = resolve_activation(act)
 
         self.last_alpha = alpha
         self.last_beta = beta
@@ -132,13 +139,14 @@ class DiffCVaRBFQP(nn.Module):
             obs = obs.unsqueeze(0)
         obs = obs.reshape(obs.size(0), -1)
 
-        x = F.relu(self.fc1(obs))
-        x21 = F.relu(self.fc21(x))
-        x22 = F.relu(self.fc22(x))
-        x23 = F.relu(self.fc23(x))
+        x = self.act(self.fc1(obs))
+        x21 = self.act(self.fc21(x))
+        x22 = self.act(self.fc22(x))
+        x23 = self.act(self.fc23(x))
 
         u_nom = self.fc31(x21)
-        beta = self.beta * torch.sigmoid(self.fc32(x22)).squeeze(-1)  # (B,) in [0, self.beta]
+        beta_raw = torch.sigmoid(self.fc32(x22)).squeeze(-1)
+        beta = self.beta_min + (self.beta - self.beta_min) * beta_raw
         self.last_beta = beta
 
         r_scale = 1.0 + 1.5*torch.sigmoid(self.fc33(x23)).squeeze(-1) # (B,) in [0, 2]

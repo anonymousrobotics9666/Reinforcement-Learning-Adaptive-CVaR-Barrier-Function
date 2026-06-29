@@ -21,16 +21,16 @@ For a specific CUDA build, install the matching PyTorch wheel for your machine a
 
 ## Quick Start
 
-Run the smoke test first. It checks config loading, environment stepping, model construction, checkpoint reload, and one short eval rollout.
+Run a short environment rollout to verify the install and save a GIF:
 
 ```bash
-python test/smoke_test.py
+python scripts/test_env.py
 ```
 
 Expected ending:
 
 ```text
-smoke test passed: test/smoke/<timestamp>/smoke_result.json
+env test passed: outputs/social_nav_var_num/env_test/<run>/summary.json
 ```
 
 ## Train
@@ -76,7 +76,7 @@ WANDB_MODE=offline RUN_NAME=turtlebot4_demo bash scripts/run_ppo.sh \
   robot.omega_max=1.5 \
   env.humans.vmax='[0.2,0.35]' \
   env.humans.num_humans=15 \
-  env.controller.safety_margin=0.2 \
+  model.actor.safety_margin=0.2 \
   env.max_steps=1200 \
   trainer.total_timesteps=20000000
 ```
@@ -129,6 +129,5 @@ config/      Hydra configs
 crowd_sim/   Gymnasium crowd navigation environments
 model/       PPO and DiffCVaR-CBF-QP models
 trainer/     PPO training loop and checkpointing
-scripts/     Train and eval entrypoints
-test/        Smoke tests
+scripts/     Train, eval, and environment test entrypoints
 ```
