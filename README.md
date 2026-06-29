@@ -5,7 +5,7 @@ Crowd navigation scneario
 High-density out-of-distribution comparison (2× speed). 
 
 
-|                |                                |                        |                    |
+| ![RL](docs/assets/rl_seed_158_succ_0_coll_1_2x.gif) | ![RL+SF](docs/assets/rl_sf_seed_158_succ_0_coll_1_2x.gif) | ![CVaR-BF-QP](docs/assets/cvarqp_seed_158_succ_0_coll_1_2x.gif) | ![Ours](docs/assets/rlcvarbetaradius_seed_158_succ_1_coll_0_2x.gif) |
 | -------------- | ------------------------------ | ---------------------- | ------------------ |
 | RL — collision | RL + Safety Filter — collision | CVaR-BF-QP — collision | **Ours — success** |
 
