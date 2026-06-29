@@ -20,7 +20,7 @@ if str(REPO_ROOT) not in sys.path:
 from config.config import Config
 from crowd_sim.utils import absolute_obs_to_relative, build_env, resolve_env_name, select_top_k_obs
 from model.factory import build_model
-from rl.run_utils import resolve_device
+from trainer.utils import resolve_device
 
 
 FIXED_EVAL_SEEDS = list(range(100, 1000 + 1, 100))

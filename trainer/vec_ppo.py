@@ -1,11 +1,11 @@
 import torch
 import numpy as np
-from rl.ppo import PPO
 from crowd_sim.utils import absolute_obs_batch_to_relative, select_top_k_obs
+from trainer.ppo import PPO
 
 class VecPPO(PPO):
-    def __init__(self, policy_class, env, num_envs, **hyperparameters):
-        super().__init__(policy_class, env, **hyperparameters)
+    def __init__(self, env, num_envs, **hyperparameters):
+        super().__init__(env, **hyperparameters)
         self.num_envs = num_envs
 
     def rollout(self):

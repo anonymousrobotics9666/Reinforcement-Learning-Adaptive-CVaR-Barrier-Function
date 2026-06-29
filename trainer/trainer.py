@@ -10,7 +10,7 @@ from omegaconf import OmegaConf
 
 from config.config import Config
 from crowd_sim.utils import build_env, resolve_env_name
-from rl.run_utils import get_policy_kwargs, resolve_device, set_global_seeds
+from trainer.utils import get_policy_kwargs, resolve_device, set_global_seeds
 
 
 ROBOT_SHORT = {

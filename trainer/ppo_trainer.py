@@ -3,9 +3,9 @@
 import os
 import torch
 
-from crowd_nav.rl_policy_factory import get_rl_policy_class
-from rl.vec_ppo import VecPPO
+from model.factory import get_model_class
 from trainer.trainer import Trainer
+from trainer.vec_ppo import VecPPO
 
 
 class PPOTrainer(Trainer):
@@ -16,13 +16,12 @@ class PPOTrainer(Trainer):
 
     def build_model(self):
         print(f"Training with {int(self.cfg.num_envs)} vectorized environments", flush=True)
-        policy_class = get_rl_policy_class(self.cfg.method)
+        policy_class = get_model_class(self.cfg.method)
         print(f"Algorithm: {self.cfg.method}, Policy: {policy_class.__name__}", flush=True)
 
         seeds = [int(self.hyperparameters["seed"]) + i for i in range(int(self.cfg.num_envs))]
         self.train_envs.reset(seed=seeds)
         model = VecPPO(
-            policy_class=policy_class,
             env=self.train_envs,
             num_envs=int(self.cfg.num_envs),
             **self.hyperparameters,

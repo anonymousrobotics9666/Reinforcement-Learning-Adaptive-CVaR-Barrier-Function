@@ -2,7 +2,7 @@ import torch
 from torch import nn
 from torch.distributions import Independent, Normal
 
-from rl.network import FCNet
+from model.ppo_base import FCNet
 
 
 class ActorCritic(nn.Module):

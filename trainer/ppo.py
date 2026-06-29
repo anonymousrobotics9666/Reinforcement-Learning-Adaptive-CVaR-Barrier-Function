@@ -21,14 +21,13 @@ from model.factory import build_model
 
 class PPO:
     """
-        This is the PPO class we will use as our model in main.py
+        PPO optimizer and rollout implementation.
     """
-    def __init__(self, policy_class, env, **hyperparameters):
+    def __init__(self, env, **hyperparameters):
         """
             Initializes the PPO model, including hyperparameters.
 
             Parameters:
-                policy_class - the policy class to use for our actor/critic networks.
                 env - the environment to train on.
                 hyperparameters - all extra arguments passed into PPO that should be hyperparameters.
 

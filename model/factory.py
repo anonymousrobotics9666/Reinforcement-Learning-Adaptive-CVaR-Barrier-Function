@@ -1,7 +1,17 @@
 from config.config import Config
-from crowd_nav.rl_policy_factory import get_rl_policy_class
 from model.actor_critic import ActorCritic
-from rl.run_utils import get_policy_kwargs
+from trainer.utils import get_policy_kwargs
+
+
+def get_model_class(method: str):
+    method = (method or "").strip().lower()
+    if method == "vanilla_ppo":
+        from model.ppo_base import FCNet
+        return FCNet
+    if method == "diffcvarbfqp":
+        from model.diff_cvar import DiffCVaRBFQP
+        return DiffCVaRBFQP
+    raise ValueError(f"Unknown method {method}")
 
 
 def _actor_kwargs(cfg):
@@ -32,7 +42,7 @@ def build_model(config, obs_dim, act_dim, action_low=None, action_high=None):
         action_high = [1.0] * int(act_dim)
 
     method = str(config.method)
-    policy_class = get_rl_policy_class(method)
+    policy_class = get_model_class(method)
     action_std_init = float(config.get("action_std_init", 0.5))
     return ActorCritic(
         policy_class=policy_class,

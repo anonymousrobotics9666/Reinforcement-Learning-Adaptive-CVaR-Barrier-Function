@@ -21,8 +21,8 @@ if str(REPO_ROOT) not in sys.path:
 from config.config import Config
 from crowd_sim.utils import build_env, resolve_env_name
 from model.factory import build_model
-from rl.run_utils import resolve_device, set_global_seeds
 from scripts.eval import Evaluator, policy_obs_from_env_obs
+from trainer.utils import resolve_device, set_global_seeds
 
 
 def compose_smoke_config(args):
