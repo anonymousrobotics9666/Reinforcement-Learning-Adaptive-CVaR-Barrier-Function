@@ -122,7 +122,7 @@ class PPO:
         num_updates = max(1, int(np.ceil(total_timesteps / max(self.timesteps_per_batch, 1))))
         start_time = time.time()
         while t_so_far < total_timesteps:                                                                       # ALG STEP 2
-            # Autobots, roll out (just kidding, we're collecting our batch simulations here)
+             
             batch_obs, batch_acts, batch_log_probs, batch_rews, batch_lens, batch_vals, batch_dones = self.rollout()                     # ALG STEP 3
             batch_steps = int(np.sum(batch_lens))
             t_so_far += batch_steps
@@ -185,13 +185,7 @@ class PPO:
                     # Calculate V_phi and pi_theta(a_t | s_t) and entropy
                     V, curr_log_probs, entropy, mini_mean = self.evaluate(mini_obs, mini_acts)
 
-                    # Calculate the ratio pi_theta(a_t | s_t) / pi_theta_k(a_t | s_t)
-                    # NOTE: we just subtract the logs, which is the same as
-                    # dividing the values and then canceling the log with e^log.
-                    # For why we use log probabilities instead of actual probabilities,
-                    # here's a great explanation: 
-                    # https://cs.stackexchange.com/questions/70518/why-do-we-use-the-log-in-gradient-based-reinforcement-algorithms
-                    # TL;DR makes gradient descent easier behind the scenes.
+                    # Calculate the policy ratio using log probabilities for numerical stability.
                     logratios = curr_log_probs - mini_log_prob
                     ratios = torch.exp(logratios)
                     approx_kl = ((ratios - 1) - logratios).mean()
@@ -204,9 +198,7 @@ class PPO:
                     surr2 = torch.clamp(ratios, 1 - self.clip, 1 + self.clip) * mini_advantage
 
                     # Calculate actor and critic losses.
-                    # NOTE: we take the negative min of the surrogate losses because we're trying to maximize
-                    # the performance function, but Adam minimizes the loss. So minimizing the negative
-                    # performance function maximizes it.
+                    # PPO maximizes the clipped surrogate objective; Adam minimizes its negative.
                     actor_loss = (-torch.min(surr1, surr2)).mean()
                     critic_loss = nn.MSELoss()(V, mini_rtgs)
                     self.logger['critic_losses'].append(critic_loss.detach().cpu())

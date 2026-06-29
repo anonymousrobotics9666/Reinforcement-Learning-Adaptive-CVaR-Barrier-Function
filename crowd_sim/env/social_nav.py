@@ -206,7 +206,7 @@ class SocialNav(gym.Env):
         # 4. calculate distances
         dist_to_goal, min_dist = self._compute_distances(self.human_positions)
         
-        # 5. claculate reward and done
+        # 5. calculate reward and done
         reward, done, info = self._compute_reward_and_done(dist_to_goal, min_dist, self.robot.u)
             
         return self._get_obs(), reward, done, False, info
@@ -281,7 +281,7 @@ class SocialNav(gym.Env):
         return robot_pos, goal_pos, robot_theta, robot_vel, human_positions, human_goals, human_vels, human_vmaxs, human_radii
 
     def _update_human_states(self):
-        # optional human goal update
+        # Optional human goal update.
         self._update_obstacle_goals()
 
         if self.human_policy_name == 'social_force':
@@ -393,27 +393,19 @@ class SocialNav(gym.Env):
             
         self.prev_dist_to_goal = dist_to_goal
 
-        # reward = reward + self.constant_penalty
-        # add a rotational penalty
+        # Add rotational and backward-motion penalties.
         r_spin = -self.spin_factor * (u[1] * self.dt) ** 2
-        # r_spin = -self.spin_factor * u[1] ** 2
         r_spin = np.clip(r_spin, -self.max_abs_rot_penalty, self.max_abs_rot_penalty)
 
-        # add a penalty for going backwards
         if u[0] < 0:
             r_back = -self.back_factor * abs(u[0])
         else:
             r_back = 0.
         r_back = np.clip(r_back, -self.max_abs_back_penalty, self.max_abs_back_penalty)
 
-        # r_safe = self._compute_safe_shaping_reward(min_dist) if not done else 0.0
-        # reward = reward + r_safe + r_spin + r_back + self.constant_penalty
         reward = reward + r_spin + r_back + self.constant_penalty
         
-        # r_safe = self._compute_safe_shaping_reward(min_dist) if not done else 0.0
-
-        # reward = reward + r_safe + self.constant_penalty
-        # scale down the reward to keep it in a reasonable range for RL training
+        # Scale reward to keep magnitudes stable during RL training.
         reward = reward / 10.0
 
         return reward, done, info

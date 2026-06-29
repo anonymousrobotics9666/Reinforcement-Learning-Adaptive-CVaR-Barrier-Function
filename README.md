@@ -131,3 +131,6 @@ trainer/     PPO training loop and checkpointing
 scripts/     Train, eval, and environment test entrypoints
 ```
 
+## Acknowledgments
+
+Thank the authors of [CrowdNav_Prediction_AttnGraph](https://github.com/Shuijing725/CrowdNav_Prediction_AttnGraph) for the crowd navigation environment and baseline references, and [PPO-for-Beginners](https://github.com/ericyangyu/PPO-for-Beginners) for the clear PPO baseline implementation.

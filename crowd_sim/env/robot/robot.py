@@ -5,7 +5,6 @@ from crowd_sim.env.robot.agents import RobotModel
 
 def angle_normalize(x):
     if isinstance(x, (np.ndarray, float, int)) or np.isscalar(x):
-        # NumPy implementation
         return (((x + np.pi) % (2 * np.pi)) - np.pi)
     
 class SingleIntegrator(RobotModel):
@@ -46,12 +45,10 @@ class SingleIntegrator(RobotModel):
     def step(self, action):
         # action: [vx, vy]
         
-        # Optional: Clip action magnitude
+        # Clip action magnitude.
         speed = np.linalg.norm(action)
         if speed > self.vmax:
             action = action / speed * self.vmax
-        # elif speed < abs(self.vmin):
-        #     action = action / speed * self.vmin
 
         self.u = np.asarray(action, dtype=np.float32).reshape(-1)
 
@@ -115,8 +112,6 @@ class Unicycle(RobotModel):
     
     def reset(self, initial_pos):
         # state: [x, y, theta]
-        # initial_pos is [x, y, theta]
-        # Initialize theta randomly or 0? Let's say 0 for now.
         self.state = np.array(initial_pos[0:3], dtype=np.float32)
         self.u = np.zeros(2, dtype=np.float32)
         self.pos = self.state[0:2]
@@ -127,11 +122,7 @@ class Unicycle(RobotModel):
         v = float(a[0])
         omega = float(a[1])
 
-        # # action: [v, omega]
-        # # v: linear velocity, omega: angular velocity
-        # v = action[0]
-        # omega = action[1]
-        # Clip actions
+        # Clip actions to the configured bounds.
         v = np.clip(v, self.vmin, self.vmax)
         omega = np.clip(omega, self.w_min, self.w_max)
 
@@ -156,7 +147,7 @@ class Unicycle(RobotModel):
         return self.state[0:2]
     
     def get_vel(self):
-        # Not directly stored; would need previous state to compute
+        # Velocity requires previous state and is not stored directly.
         raise NotImplementedError("Velocity computation requires previous state.")
 
     @property
@@ -205,7 +196,7 @@ class UnicycleDynamic(RobotModel):
         
         omega, a = action
         
-        # Clip actions?
+        # Clip actions to dynamic limits.
         a = np.clip(a, -self.acc_max, self.acc_max)
         omega = np.clip(omega, -self.w_max, self.w_max)
 
@@ -220,8 +211,8 @@ class UnicycleDynamic(RobotModel):
         
         # 2. Update Velocity
         v_new = v + a * self.dt
-        v_new = np.clip(v_new, 0.0, self.vmax) # Assume forward only? or -vmax to vmax. Let's say -vmax to vmax allowed
-        # Actually usually v >= 0 for unicycle unless reversing. Let's assume v in [-vmax, vmax]
+        # Preserve current forward-speed convention.
+        v_new = np.clip(v_new, 0.0, self.vmax)
         v_new = np.clip(v_new, -self.vmax, self.vmax)
         
         # 3. Update Heading

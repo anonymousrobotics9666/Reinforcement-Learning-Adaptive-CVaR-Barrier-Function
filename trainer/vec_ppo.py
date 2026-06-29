@@ -90,10 +90,7 @@ class VecPPO(PPO):
                     batch_vals.append(ep_vals)
                     batch_dones.append(env_dones[i])
                     
-                    # Calculate RTGs for this episode and extend
-                    # We can use the existing compute_rtgs but meant for batch, 
-                    # so let's do it locally or aggregate and call later.
-                    # Original PPO calls compute_rtgs(batch_rews) at the end.
+                    # RTGs are computed after collecting complete episodes.
                     
                     t_so_far += ep_len
                     
