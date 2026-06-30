@@ -39,6 +39,7 @@ class DiffCVaRBFQP(nn.Module):
         super().__init__()
         self.n_features = n_features
         self.action_dim = action_dim
+        self.policy_dim = int(action_dim) + 2
 
         self.safe_dist = safe_dist
         self.alpha = alpha   
@@ -53,19 +54,23 @@ class DiffCVaRBFQP(nn.Module):
         self.robot_type = robot_type
         self.act_name = str(act)
         self.act = resolve_activation(act)
+        self.vmax = float(vmax)
+        self.omega_max = float(omega_max)
+        self.bound_polygon_sides = 32
 
         self.last_alpha = alpha
         self.last_beta = beta
+        self.last_r_safe = None
         self._qp_warm_start = None
         self._u_prev = None
         self.infeasible = False
 
         if self.robot_type == 'single_integrator':
-            self.u_min = [-vmax, -vmax]
-            self.u_max = [vmax, vmax]
+            self.u_min = [-self.vmax, -self.vmax]
+            self.u_max = [self.vmax, self.vmax]
         elif self.robot_type == 'unicycle':
-            self.u_min = [-vmax, -omega_max]
-            self.u_max = [vmax, omega_max]
+            self.u_min = [-self.vmax, -self.omega_max]
+            self.u_max = [self.vmax, self.omega_max]
         else:
             self.u_min = None
             self.u_max = None
@@ -140,28 +145,56 @@ class DiffCVaRBFQP(nn.Module):
         variances = variances_flat.reshape(bsz, k, m)
         return means, variances
 
-    def forward(self, obs):
+    def _prepare_obs(self, obs):
         if isinstance(obs, np.ndarray):
             obs = torch.tensor(obs, dtype=torch.float)
         obs = obs.to(self.fc1.weight.device)
         if obs.dim() == 1:
             obs = obs.unsqueeze(0)
-        obs = obs.reshape(obs.size(0), -1)
+        return obs.reshape(obs.size(0), -1)
 
+    def forward(self, obs):
+        return self.policy_mean(obs)
+
+    def policy_mean(self, obs):
+        obs = self._prepare_obs(obs)
         x = self.act(self.fc1(obs))
         x21 = self.act(self.fc21(x))
         x22 = self.act(self.fc22(x))
         x23 = self.act(self.fc23(x))
 
         u_nom = self.fc31(x21)
-        beta_raw = torch.sigmoid(self.fc32(x22)).squeeze(-1)
+        beta_latent = self.fc32(x22)
+        r_safe_latent = self.fc33(x23)
+        return torch.cat([u_nom, beta_latent, r_safe_latent], dim=-1)
+
+    def _decode_policy_action(self, latent_action):
+        if isinstance(latent_action, np.ndarray):
+            latent_action = torch.tensor(latent_action, dtype=torch.float)
+        latent_action = latent_action.to(self.fc1.weight.device)
+        if latent_action.dim() == 1:
+            latent_action = latent_action.unsqueeze(0)
+        latent_action = latent_action.reshape(latent_action.size(0), -1)
+        if latent_action.size(1) != self.policy_dim:
+            raise ValueError(
+                f"DiffCVaRBFQP expected latent action dim {self.policy_dim}, "
+                f"got {latent_action.size(1)}"
+            )
+
+        u_nom = latent_action[:, : self.action_dim]
+        beta_latent = latent_action[:, self.action_dim]
+        r_safe_latent = latent_action[:, self.action_dim + 1]
+        beta_raw = torch.sigmoid(beta_latent)
         beta = self.beta_min + (self.beta - self.beta_min) * beta_raw
-        self.last_beta = beta
-
-        r_scale = 1.0 + 1.5*torch.sigmoid(self.fc33(x23)).squeeze(-1) # (B,) in [0, 2]
+        r_scale = 1.0 + 1.5 * torch.sigmoid(r_safe_latent)
         r_safe_learned = self.safe_dist * r_scale
+        self.last_beta = beta
         self.last_r_safe = r_safe_learned
+        return u_nom, beta, r_safe_learned
 
+    def project_policy_action(self, obs, latent_action):
+        obs = self._prepare_obs(obs)
+        u_nom, beta, r_safe_learned = self._decode_policy_action(latent_action)
         if self.robot_type == 'single_integrator':
             u_safe = self._solve_single_integrator_qp(obs, u_nom, beta, r_safe_learned)
         elif self.robot_type == 'unicycle':
@@ -171,6 +204,35 @@ class DiffCVaRBFQP(nn.Module):
         else:
             raise NotImplementedError(f"Robot type {self.robot_type} not supported in DiffCVaRBFQP")
         return u_safe
+
+    def _control_bound_constraints(self, nBatch, device, dtype):
+        if self.robot_type == 'single_integrator':
+            sides = int(self.bound_polygon_sides)
+            angles = torch.arange(sides, device=device, dtype=dtype) * (2.0 * math.pi / sides)
+            normals = torch.stack([torch.cos(angles), torch.sin(angles)], dim=1)
+            radius = self.vmax * math.cos(math.pi / sides)
+            G_bound = normals.unsqueeze(0).expand(nBatch, sides, self.action_dim).contiguous()
+            h_bound = torch.full((nBatch, sides), float(radius), device=device, dtype=dtype)
+            return G_bound, h_bound
+
+        if self.robot_type == 'unicycle':
+            G_bound = torch.tensor(
+                [[1.0, 0.0], [-1.0, 0.0], [0.0, 1.0], [0.0, -1.0]],
+                device=device,
+                dtype=dtype,
+            ).unsqueeze(0).expand(nBatch, 4, self.action_dim).contiguous()
+            h_bound = torch.tensor(
+                [self.vmax, self.vmax, self.omega_max, self.omega_max],
+                device=device,
+                dtype=dtype,
+            ).unsqueeze(0).expand(nBatch, 4).contiguous()
+            return G_bound, h_bound
+
+        raise NotImplementedError(f"Robot type {self.robot_type} not supported in DiffCVaRBFQP")
+
+    def _append_control_bounds(self, G, h):
+        G_bound, h_bound = self._control_bound_constraints(G.size(0), G.device, G.dtype)
+        return torch.cat([G, G_bound], dim=1), torch.cat([h, h_bound], dim=1)
 
     def _solve_single_integrator_qp(self, obs, u_nom, beta, r_safe_learned):
         """
@@ -223,6 +285,7 @@ class DiffCVaRBFQP(nn.Module):
 
         G = (-2.0 * rel * mask.unsqueeze(-1)).contiguous()     # (B,K,2)
         h_qp = (-(rhs_wc * mask)).contiguous()                 # (B,K)
+        G, h_qp = self._append_control_bounds(G, h_qp)
 
         Q_qp = Q.to(dtype=torch.float64)
         p_qp = p.to(dtype=torch.float64)
@@ -259,7 +322,7 @@ class DiffCVaRBFQP(nn.Module):
         self._u_prev = x.detach().cpu().numpy().reshape(-1).astype(np.float32)
         return x
 
-    def _solve_unicycle_qp(self, obs, u_nom_xy, beta, r_safe_learned):
+    def _solve_unicycle_qp(self, obs, u_nom, beta, r_safe_learned):
         """
         Lookahead CVaR-CBF for Unicycle with learned safe radius.
         """
@@ -285,12 +348,10 @@ class DiffCVaRBFQP(nn.Module):
         J[:, 1, 0] = s
         J[:, 1, 1] = epsilon * c
 
-        # Lookahead unicycle CBF-QP objective:
-        # min ||J u - u_nom_xy||^2
-        JT = J.transpose(1, 2)
-        Q = 2.0 * torch.bmm(JT, J)
-        Q = Q + 1e-6 * torch.eye(self.action_dim, device=device, dtype=obs.dtype).unsqueeze(0)
-        p = -2.0 * torch.bmm(JT, u_nom_xy.unsqueeze(-1)).squeeze(-1)
+        # Bounded unicycle CBF-QP objective: min ||u - u_nom||^2.
+        Q = torch.eye(self.action_dim, device=device, dtype=obs.dtype).unsqueeze(0)
+        Q = 2.0 * Q.expand(nBatch, self.action_dim, self.action_dim)
+        p = -2.0 * u_nom
 
 
         # Lookahead relative position
@@ -319,6 +380,7 @@ class DiffCVaRBFQP(nn.Module):
 
         G = torch.stack([-(lg_v * mask), -(lg_w * mask)], dim=2).contiguous()  # (B,K,2)
         h_qp = (-(rhs_wc * mask)).contiguous()  # (B,K)
+        G, h_qp = self._append_control_bounds(G, h_qp)
 
         Q_qp = Q.to(dtype=torch.float64)
         p_qp = p.to(dtype=torch.float64)

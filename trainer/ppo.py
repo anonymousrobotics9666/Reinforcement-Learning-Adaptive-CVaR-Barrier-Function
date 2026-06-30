@@ -97,6 +97,7 @@ class PPO:
         self.actor = self.model.actor
         self.critic = self.model.critic
         self.log_std = self.model.log_std
+        self.uses_qp_projection = bool(getattr(self.model, "uses_qp_projection", False))
         self.act_low = self.model.act_low
         self.act_high = self.model.act_high
         self.act_scale = self.model.act_scale
@@ -298,7 +299,10 @@ class PPO:
                     self.logger['rsafe_head_grads'].append(rsafe_head_sq ** 0.5)
 
                     with torch.no_grad():
-                        mini_mu, _ = self._squash_action(mini_mean.detach())
+                        if self.uses_qp_projection:
+                            mini_mu = mini_mean.detach()[:, : self.act_dim]
+                        else:
+                            mini_mu, _ = self._squash_action(mini_mean.detach())
                         self.logger['mu_means'].append(mini_mu.mean().item())
                         self.logger['sigma_means'].append(torch.exp(self.log_std).mean().item())
                     # -----------------------------------------------
@@ -374,7 +378,7 @@ class PPO:
                         obs_tensor = torch.tensor(obs_rel, dtype=torch.float).to(self.device).unsqueeze(0)
                         if hasattr(self, 'actor'):
                             policy_action = self.model.get_action_deterministic(obs_tensor)
-                            action_tensor = self.model.policy_action_to_env_action(obs_tensor, policy_action)
+                            action_tensor = self._policy_action_to_env_action(obs_tensor, policy_action)
                             action = action_tensor.detach().cpu().numpy()[0]
                         else:
                             raise ValueError("Actor model not found during evaluation")
@@ -491,7 +495,7 @@ class PPO:
 
                 # Calculate action and make a step in the env. 
                 # Note that rew is short for reward.
-                action, log_prob = self.get_action(obs)
+                action, log_prob, stored_action = self.get_action(obs)
                 if self.render and len(batch_lens) == 0:
                     _set_render_safe_distance(self.env, self.actor)
                     self.env.render()
@@ -506,7 +510,7 @@ class PPO:
                 ep_vals.append(float(val.item()))
                 # Track done for the transition at the current step (standard done[t] semantics).
                 ep_dones.append(done)
-                batch_acts.append(action)
+                batch_acts.append(stored_action)
                 batch_log_probs.append(log_prob)
 
                 # If the environment tells us the episode is terminated, break
@@ -550,9 +554,20 @@ class PPO:
         """
         # Query the actor network for a mean action
         obs_rel = select_top_k_obs(absolute_obs_batch_to_relative(obs), self.obs_top_k)
+        single_obs = np.asarray(obs_rel).ndim == 1
         obs = torch.tensor(obs_rel, dtype=torch.float).to(self.device)
         mean = self.actor(obs)  # latent mean (unbounded)
         dist = self._build_action_dist(mean)
+
+        if self.uses_qp_projection:
+            latent_action = mean if self.deterministic else dist.rsample()
+            with torch.no_grad():
+                action = self.model.project_policy_action(obs, latent_action)
+            if self.deterministic:
+                log_prob = torch.ones(action.shape[0], device=self.device, dtype=action.dtype)
+            else:
+                log_prob = dist.log_prob(latent_action)
+            return self._action_result(action, log_prob, latent_action, single_obs)
 
         # Sample latent action then squash/mapping to real action bounds
         z = dist.rsample()
@@ -566,10 +581,11 @@ class PPO:
         # as our "exploration" factor.
         if self.deterministic:
             action_det, _ = self._squash_action(mean)
-            return action_det.detach().cpu().numpy(), 1
+            log_prob_det = torch.ones(action_det.shape[0], device=self.device, dtype=action_det.dtype)
+            return self._action_result(action_det, log_prob_det, action_det, single_obs)
 
         # Return the sampled action and the log probability of that action in our distribution
-        return action.detach().cpu().numpy(), log_prob.detach().cpu().numpy()
+        return self._action_result(action, log_prob, action, single_obs)
 
     def evaluate(self, batch_obs, batch_acts):
         """
@@ -591,9 +607,13 @@ class PPO:
         # else:
         V = self.critic(batch_obs).squeeze()
 
-        # Calculate log probabilities with squashed Gaussian change-of-variables correction.
+        # Calculate log probabilities. DiffCVaR stores latent actions; vanilla PPO stores env actions.
         mean = self.actor(batch_obs)  # latent mean
         dist = self._build_action_dist(mean)
+        if self.uses_qp_projection:
+            log_probs = dist.log_prob(batch_acts)
+            return V, log_probs, dist.entropy(), mean
+
         z, u = self._unsquash_action(batch_acts)
         base_log_probs = dist.log_prob(z)
         log_probs = self._squash_log_prob(base_log_probs, u)
@@ -604,6 +624,22 @@ class PPO:
 
     def _build_action_dist(self, mean):
         return self.model.build_action_dist(mean)
+
+    def _policy_action_to_env_action(self, obs, policy_action):
+        if self.uses_qp_projection:
+            return self.model.project_policy_action(obs, policy_action)
+        return self.model.policy_action_to_env_action(obs, policy_action)
+
+    @staticmethod
+    def _action_result(env_action, log_prob, stored_action, single_obs):
+        env_np = env_action.detach().cpu().numpy()
+        log_np = log_prob.detach().cpu().numpy()
+        stored_np = stored_action.detach().cpu().numpy()
+        if single_obs:
+            env_np = env_np[0]
+            log_np = log_np[0]
+            stored_np = stored_np[0]
+        return env_np, log_np, stored_np
 
     def _squash_action(self, z):
         return self.model.policy_action_to_env_action(None, z, return_squashed=True)
@@ -679,7 +715,7 @@ class PPO:
         # Miscellaneous parameters
         self.render = False                             # If we should render during rollout
         self.deterministic = False                      # If we're testing, don't sample actions
-        self.seed = None								# Sets the seed of our program, used for reproducibility of results
+        self.seed = None                                  # Sets the seed of our program, used for reproducibility of results
         self.save_dir = './'                            # Directory to save models
         self.device = torch.device('cpu')               # Device to run on
 

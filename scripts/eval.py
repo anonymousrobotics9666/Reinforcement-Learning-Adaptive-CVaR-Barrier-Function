@@ -179,9 +179,12 @@ class Evaluator:
                         obs_t = torch.tensor(policy_obs, dtype=torch.float32, device=self.device).unsqueeze(0)
                         with torch.no_grad():
                             policy_action = self.model.get_action_deterministic(obs_t)
+                            if getattr(self.model, "uses_qp_projection", False):
+                                action_tensor = self.model.project_policy_action(obs_t, policy_action)
+                            else:
+                                action_tensor = self.model.policy_action_to_env_action(obs_t, policy_action)
                             set_render_safe_distance(env, self.model.actor)
-                            action = self.model.policy_action_to_env_action(obs_t, policy_action)
-                            action = action.detach().cpu().numpy().astype(np.float32).squeeze(0)
+                            action = action_tensor.detach().cpu().numpy().astype(np.float32).squeeze(0)
 
                         obs, reward, terminated, truncated, info = env.step(action)
                         done = bool(terminated or truncated)

@@ -42,7 +42,7 @@ class VecPPO(PPO):
         while t_so_far < self.timesteps_per_batch:
             # Get actions for all envs
             # obs is (num_envs, obs_dim) which works with FeedForwardNN
-            actions, log_probs = self.get_action(obs)
+            actions, log_probs, stored_actions = self.get_action(obs)
             
             # Step the vectorized environment
             next_obs, rews, terminations, truncations, infos = self.env.step(actions)
@@ -54,7 +54,7 @@ class VecPPO(PPO):
             for i in range(self.num_envs):
                 # Store step data
                 env_obs[i].append(obs[i])
-                env_acts[i].append(actions[i])
+                env_acts[i].append(stored_actions[i])
                 env_log_probs[i].append(log_probs[i])
                 env_rews[i].append(rews[i])
                 env_dones[i].append(bool(dones[i]))

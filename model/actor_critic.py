@@ -21,8 +21,10 @@ class ActorCritic(nn.Module):
     ):
         super().__init__()
         self.actor = policy_class(obs_dim, act_dim, **actor_kwargs)
+        self.uses_qp_projection = hasattr(self.actor, "project_policy_action")
+        self.policy_dim = int(getattr(self.actor, "policy_dim", act_dim))
         self.critic = FCNet(obs_dim, 1, **critic_kwargs)
-        self.log_std = nn.Parameter(torch.log(torch.full((int(act_dim),), float(action_std_init))))
+        self.log_std = nn.Parameter(torch.log(torch.full((self.policy_dim,), float(action_std_init))))
 
         action_low = torch.as_tensor(action_low, dtype=torch.float32)
         action_high = torch.as_tensor(action_high, dtype=torch.float32)
@@ -41,7 +43,16 @@ class ActorCritic(nn.Module):
     def get_action_deterministic(self, obs):
         return self.actor(obs)
 
+    def project_policy_action(self, obs, policy_action):
+        if not self.uses_qp_projection:
+            return self.policy_action_to_env_action(obs, policy_action)
+        return self.actor.project_policy_action(obs, policy_action)
+
     def policy_action_to_env_action(self, obs, policy_action, return_squashed=False):
+        if self.uses_qp_projection:
+            if return_squashed:
+                raise ValueError("DiffCVaR QP projection does not expose a squashed latent action")
+            return self.project_policy_action(obs, policy_action)
         squashed = torch.tanh(policy_action)
         action = self.act_bias + self.act_scale * squashed
         if return_squashed:
