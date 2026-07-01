@@ -70,12 +70,26 @@ def set_render_safe_distance(env, actor):
     base_env.render_safe_dist = float(safe_dist) if np.isfinite(safe_dist) else None
 
 
+def override_suffix(overrides):
+    if not overrides:
+        return ""
+    raw = "__".join(str(item) for item in overrides)
+    token = re.sub(r"[^A-Za-z0-9]+", "_", raw).strip("_")
+    return f"_{token[:120]}" if token else "_overrides"
+
+
 class Evaluator:
-    def __init__(self, save_dir, episodes_per_seed=None, visualize=False):
+    def __init__(self, save_dir, episodes_per_seed=None, visualize=False, overrides=None):
         self.save_dir = Path(save_dir)
         self.visualize = bool(visualize)
         self.video_save_dir = None
+        self.overrides = list(overrides or [])
+        self.output_suffix = override_suffix(self.overrides)
         self.config = OmegaConf.load(self.save_dir / "config.yaml")
+        if self.overrides:
+            self.config = OmegaConf.merge(self.config, OmegaConf.from_dotlist(self.overrides))
+            OmegaConf.resolve(self.config)
+            print(f"eval overrides: {' '.join(self.overrides)}", flush=True)
         self.env_name = resolve_env_name(self.config)
         self.device = resolve_device(self.config.get("device", "auto"), default="cuda")
 
@@ -122,7 +136,7 @@ class Evaluator:
         self.model.load_state_dict(state["model"], strict=True)
         self.model.eval()
         if self.visualize:
-            self.video_save_dir = self.save_dir / f"visualize_{ckpt_path.stem}"
+            self.video_save_dir = self.save_dir / f"visualize_{ckpt_path.stem}{self.output_suffix}"
             self.video_save_dir.mkdir(parents=True, exist_ok=True)
         return self.evaluate(ckpt_path)
 
@@ -143,7 +157,7 @@ class Evaluator:
             )
 
         results["aggregate"] = self._aggregate(results)
-        result_path = self.save_dir / "eval_results.json"
+        result_path = self.save_dir / f"eval_results{self.output_suffix}.json"
         result_path.write_text(json.dumps(results, indent=2), encoding="utf-8")
         print(f"results: {result_path}")
         return results
@@ -264,10 +278,12 @@ if __name__ == "__main__":
     parser.add_argument("--checkpoint", default="", help="Evaluate one checkpoint instead of all ckpt_*.pt files")
     parser.add_argument("--episodes-per-seed", type=int, default=None, help="Episodes evaluated for each fixed seed")
     parser.add_argument("--visualize", action="store_true", help="Save GIF rollout videos")
+    parser.add_argument("overrides", nargs="*", help="Eval-only OmegaConf overrides, e.g. env.humans.use_gmm=false")
     args = parser.parse_args()
 
     Evaluator(
         args.save_dir,
         episodes_per_seed=args.episodes_per_seed,
         visualize=args.visualize,
+        overrides=args.overrides,
     ).eval_all_ckpts(checkpoint=args.checkpoint or None)

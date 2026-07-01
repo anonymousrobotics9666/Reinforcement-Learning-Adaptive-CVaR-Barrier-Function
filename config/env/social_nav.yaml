@@ -5,6 +5,7 @@ act_dim: 2
 sensing_radius: 20.0
 obs_top_k: 1
 unicycle_k_omega: 4.0
+robot_ini_goal_dist: 2.0
 
 humans:
   radius: 0.4

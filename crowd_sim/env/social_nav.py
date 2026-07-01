@@ -32,6 +32,7 @@ class SocialNav(gym.Env):
         self.goal_pos = np.zeros(2)
         self.robot_traj = []
         self.render_safe_dist = None
+        self.robot_ini_goal_dist = float(env_cfg.get("robot_ini_goal_dist", robot_cfg.get("ini_goal_dist", 6.0)))
 
         self.robot_type = robot_cfg['type']
         if self.robot_type == 'single_integrator':
@@ -234,13 +235,18 @@ class SocialNav(gym.Env):
             robot_pos, goal_pos, robot_theta, robot_vel, human_positions, human_goals, human_vels, human_vmaxs, human_radii = \
             self.crossing_init_robot_humans()
         else:
-            # Robot starts near left-bottom corner and goals near right-top corner.
-            robot_pos = sample_point_in_disk(
-                self.np_random, center=[-5.5, -5.5], radius=1.0, arena_size=self.arena_size
-            )
-            goal_pos = sample_point_in_disk(
-                self.np_random, center=[5.5, 5.5], radius=1.0, arena_size=self.arena_size
-            )
+            def sample_arena_point():
+                return self.np_random.uniform(-self.arena_size, self.arena_size, 2)
+
+            for _ in range(500):
+                robot_pos = sample_arena_point()
+                goal_pos = sample_arena_point()
+                if np.linalg.norm(robot_pos - goal_pos) >= self.robot_ini_goal_dist:
+                    break
+            else:
+                raise RuntimeError(
+                    "Failed to sample a valid robot start/goal pair in SocialNav"
+                )
             robot_theta = self.np_random.uniform(-np.pi, np.pi)
 
             min_pair_dist = 6.0
@@ -248,6 +254,13 @@ class SocialNav(gym.Env):
             human_goals = np.zeros((self.num_humans, 2), dtype=float)
 
             safe_dist_init = self.robot_radius + self.human_radius_max + self.discomfort_dist
+
+            def valid_human_pair(p, g):
+                return (
+                    np.linalg.norm(p - g) >= min_pair_dist
+                    and np.linalg.norm(robot_pos - p) >= safe_dist_init
+                    and np.linalg.norm(goal_pos - g) >= safe_dist_init
+                )
 
             for i in range(self.num_humans):
                 found = False
@@ -258,20 +271,25 @@ class SocialNav(gym.Env):
                     g = sample_point_in_disk(
                         self.np_random, center=[0.0, 0.0], radius=self.human_circle_radius, arena_size=self.arena_size
                     )
-                    if np.linalg.norm(p - g) >= min_pair_dist and np.linalg.norm(robot_pos - p) >= safe_dist_init and np.linalg.norm(goal_pos - g) >= safe_dist_init:
+                    if valid_human_pair(p, g):
                         human_positions[i] = p
                         human_goals[i] = g
                         found = True
                         break
 
                 if not found:
-                    angle = self.np_random.uniform(0.0, 2.0 * np.pi)
-                    p = np.array([
-                        self.human_circle_radius * np.cos(angle),
-                        self.human_circle_radius * np.sin(angle),
-                    ], dtype=float)
-                    human_positions[i] = p
-                    human_goals[i] = -p
+                    for _ in range(500):
+                        p = sample_arena_point()
+                        g = sample_arena_point()
+                        if valid_human_pair(p, g):
+                            human_positions[i] = p
+                            human_goals[i] = g
+                            found = True
+                            break
+                    if not found:
+                        raise RuntimeError(
+                            f"Failed to sample a valid human start/goal pair in SocialNav for human {i}"
+                        )
 
             human_vmaxs = self.np_random.uniform(self.human_vmax_min, self.human_vmax, size=self.num_humans)
             human_radii = self.np_random.uniform(self.human_radius_min, self.human_radius_max, size=self.num_humans)

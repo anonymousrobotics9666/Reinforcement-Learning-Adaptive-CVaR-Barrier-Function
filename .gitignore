@@ -3,7 +3,7 @@ devel/
 logs/
 wandb/
 *.bag
-*.pt
+# *.pt
 *.pth
 *.ckpt
 __pycache__/
